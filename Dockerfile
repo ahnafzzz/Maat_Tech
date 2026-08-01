@@ -1,4 +1,4 @@
-FROM php:8.2-cli
+FROM php:8.3-cli
 
 # Install system dependencies and PHP extensions required by Laravel & PostgreSQL
 RUN apt-get update && apt-get install -y \
