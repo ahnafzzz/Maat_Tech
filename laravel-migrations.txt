@@ -1,0 +1,121 @@
+```php
+<?php
+// database/migrations/xxxx_xx_xx_create_admins_table.php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('admins', function (Blueprint $table) {
+            $table->id();
+            $table->string('admin_id')->unique(); // e.g., ADM-7701-X
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->boolean('is_lead')->default(false);
+            $table->boolean('can_invite')->default(false);
+            $table->enum('status', ['active', 'inactive'])->default('active');
+            $table->rememberToken();
+            $table->timestamps();
+            
+            $table->index('admin_id');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('admins');
+    }
+};
+
+// database/migrations/xxxx_xx_xx_create_admin_invitation_requests_table.php
+Schema::create('admin_invitation_requests', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('requester_admin_id')->constrained('admins')->cascadeOnDelete();
+    $table->string('target_email');
+    $table->string('target_name');
+    $table->string('proposed_admin_id');
+    $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+    $table->foreignId('processed_by_admin_id')->nullable()->constrained('admins')->nullOnDelete();
+    $table->timestamp('lead_decision_at')->nullable();
+    $table->text('lead_notes')->nullable();
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_products_table.php
+Schema::create('products', function (Blueprint $table) {
+ $table->id();
+    $table->foreignId('category_id')->constrained()->cascadeOnDelete();
+    $table->string('name');
+    $table->string('slug')->unique();
+    $table->text('description')->nullable();
+    $table->json('specs')->nullable(); // Technical specs: wattage, material, axes, etc.
+    $table->decimal('price', 12, 2);
+    $table->integer('stock_quantity')->default(0);
+    $table->string('sku')->unique();
+    $table->string('image_path')->nullable();
+    $table->boolean('is_featured')->default(false);
+    $table->enum('status', ['active', 'inactive', 'discontinued'])->default('active');
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_carts_table.php
+Schema::create('carts', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->nullable()->constrained()->cascadeOnDelete();
+    $table->string('session_id')->nullable()->index(); // Track pre-login
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_cart_items_table.php
+Schema::create('cart_items', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('cart_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+    $table->integer('quantity')->default(1);
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_wishlists_table.php
+Schema::create('wishlists', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->constrained()->unique(); // One per user
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_wishlist_items_table.php
+Schema::create('wishlist_items', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('wishlist_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('product_id')->constrained()->cascadeOnDelete();
+    $table->timestamp('added_at')->useCurrent();
+});
+
+// database/migrations/xxxx_xx_xx_create_orders_table.php
+Schema::create('orders', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('user_id')->constrained();
+    $table->string('order_number')->unique(); // ORD-2026-XXXXX
+    $table->decimal('total', 12, 2);
+    $table->enum('status', ['pending', 'processing', 'shipped', 'delivered', 'cancelled'])->default('pending');
+    $table->timestamp('ordered_at');
+ $table->json('shipping_address');
+    $table->text('notes')->nullable();
+    $table->timestamps();
+});
+
+// database/migrations/xxxx_xx_xx_create_order_items_table.php
+Schema::create('order_items', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('order_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('product_id')->constrained();
+    $table->string('product_name'); // Snapshot    $table->decimal('price', 12, 2); // Snapshot price
+    $table->integer('quantity');
+    $table->timestamps();
+});
+```

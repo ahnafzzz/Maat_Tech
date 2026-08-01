@@ -1,0 +1,397 @@
+```php
+<?php
+// database/seeders/DatabaseSeeder.php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+class DatabaseSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $this->call([
+            CategorySeeder::class,
+            ProductSeeder::class,
+            AdminSeeder::class,
+            UserSeeder::class,
+            OrderSeeder::class,
+        ]);
+    }
+}
+
+// database/seeders/AdminSeeder.php
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\Admin;
+use Illuminate\Support\Facades\Hash;
+
+class AdminSeeder extends Seeder
+{
+    public function run(): void
+    {
+        // Lead Admin — has full authority
+        Admin::create([
+            'admin_id' => 'ADM-0001-Z',
+            'name' => 'System Lead',
+            'email' => 'lead@mechlum.dev',
+            'password' => Hash::make('LeadAccess2026!'),
+            'is_lead' => true,
+            'can_invite' => true,
+            'status' => 'active',
+        ]);
+
+        // Operator Admin — active, but must request to invite
+        Admin::create([
+            'admin_id' => 'ADM-0003-J',
+            'name' => 'Priya Desai',
+            'email' => 'p.desai@mechlum.dev',
+            'password' => Hash::make('OperatorPass99'),
+            'is_lead' => false,
+            'can_invite' => false,
+            'status' => 'active',
+        ]);
+
+        // Another Operator        Admin::create([
+            'admin_id' => 'ADM-0004-K',
+            'name' => 'Marcus Reid',
+            'email' => 'm.reid@mechlum.dev',
+            'password' => Hash::make('SecureAuth77'),
+            'is_lead' => false,
+            'can_invite' => false,
+            'status' => 'active',
+        ]);
+
+        // Inactive Admin (to test status blocking)
+        Admin::create([
+            'admin_id' => 'ADM-0002-Y',
+            'name' => 'Diana Ross',
+            'email' => 'd.ross@mechlum.dev',
+            'password' => Hash::make('InactiveOld22'),
+            'is_lead' => false,
+            'can_invite' => false,
+            'status' => 'inactive',
+        ]);
+    }
+}
+
+// database/seeders/UserSeeder.php
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+
+class UserSeeder extends Seeder
+{
+    public function run(): void
+    {
+        User::create([
+            'name' => 'Alex Chen',
+            'email' => 'alex.chen@domain.net',
+            'password' => Hash::make('CustomerPass123'),
+            'email_verified_at' => now(),
+        ]);
+
+        User::create([
+            'name' => 'Jordan Blake',
+            'email' => 'j.blake@domain.net',
+            'password' => Hash::make('Password456'),
+            'email_verified_at' => now(),
+        ]);
+    }
+}
+
+// database/seeders/CategorySeeder.php
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\Category;
+
+class CategorySeeder extends Seeder
+{
+    public function run(): void
+    {
+        $categories = [
+            ['name' => 'Articulated Arms', 'slug' => 'articulated-arms', 'description' => 'Multi-axis mechanical armatures.'],
+            ['name' => 'LED Matrix Systems', 'slug' => 'led-matrix-systems', 'description' => 'High-efficiency illumination clusters.'],
+            ['name' => 'Power Systems', 'slug' => 'power-systems', 'description' => '24V DC adapters and battery packs.'],
+            ['name' => 'Joint & Mount Kits', 'slug' => 'joint-mount-kits', 'description' => 'Replacement joints, clamps, and bases.'],
+        ];
+
+        foreach ($categories as $cat) {
+            Category::create($cat + ['is_active' => true]);
+        }
+    }
+}
+
+// database/seeders/ProductSeeder.php
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\Product;
+
+class ProductSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $products = [
+            [
+                'category_id' => 1,
+                'name' => 'Series-X Articulated Lamp',
+                'slug' => 'series-x-articulated-lamp',
+                'description' => '4-axis CNC-milled aluminum arm with friction-lock joints. Ideal for desktop technical drawing and precision bench work.',
+                'specs' => json_encode([
+                    'axes' => 4,
+                    'reach' => '620mm',
+                    'material' => '6061-T6 Aluminum',
+                    'weight' => '1.2kg',
+                    'voltage' => '24V DC',
+                    'joint_type' => 'Radial bearing with set screw',
+                ]),
+                'price' => 249.00,
+                'stock_quantity' => 45,
+                'sku' => 'MAL-SX-001',
+                'is_featured' => true,
+            ],
+            [
+                'category_id' => 1,
+                'name' => '7-Axis Interference Arm',
+                'slug' => '7-axis-interference-arm',
+                'description' => 'Zero-backlash harmonic drive joints with absolute encoder position feedback. Industrial-grade capability in a desktop form factor.',
+                'specs' => json_encode([
+                    'axes' => 7,
+                    'reach' => '840mm',
+                    'material' => 'Stainless steel + ABS housing',
+                    'weight' => '2.4kg',
+                    'voltage' => '24V DC',
+                    'encoder' => '12-bit absolute',
+ ]),
+                'price' => 449.00,
+                'stock_quantity' => 12,
+                'sku' => 'MAL-7A-002',
+                'is_featured' => true,
+            ],
+            [
+                'category_id' => 2,
+                'name' => 'Matrix LED Head Module',
+                'slug' => 'matrix-led-head-module',
+                'description' => '96-LED SMD cluster with integrated PWM dimming driver. 5500K color temp, 96 CRI. Fits all Series-X arms via quick-release mount.',
+                'specs' => json_encode([
+                    'led_count' => 96,
+                    'color_temp' => '5500K',
+                    'cri' => 96,
+                    'lumen_output' => '1200lm',
+                    'dimming' => 'PWM 1-100%',
+                    'mount' => 'QR-MTX-01',
+                ]),
+                'price' => 129.00,
+                'stock_quantity' => 88,
+                'sku' => 'LED-MTX-003',
+                'is_featured' => true,
+            ],
+            [
+                'category_id' => 2,
+                'name' => 'Dual-Bar LED Array',
+                'slug' => 'dual-bar-led-array',
+                'description' => 'Linear bar configuration for wide-area wash lighting. Includes diffuser and barn doors.',
+ 'specs' => json_encode([
+ 'length' => '320mm',
+                    'led_count' => 64,
+                    'color_temp' => '4000K / 6000K switchable',
+                    'wattage' => '18W',
+                ]),
+                'price' => 89.00,
+                'stock_quantity' => 34,
+                'sku' => 'LED-DBL-004',
+            ],
+            [
+                'category_id' => 3,
+                'name' => '24V DC Power System',
+                'slug' => '24v-dc-power-system',
+                'description' => 'Regulated 24V5A DC power brick with overcurrent protection. Universal input 100-240V.',
+                'specs' => json_encode([
+                    'output_voltage' => '24V DC',
+                    'amperage' => '5A',
+                    'input_range' => '100-240VAC',
+                    'efficiency' => '92%',
+                    'connector' => '5.5x2.1mm locking',
+                ]),
+                'price' => 89.00,
+                'stock_quantity' => 120,
+                'sku' => 'PWR-24V-005',
+            ],
+            [
+                'category_id' => 4,
+                'name' => 'Heavy-Duty Cast Base',
+                'slug' => 'heavy-duty-cast-base',
+                'description' => 'Machined cast iron base with rubber vibration isolation feet and integrated cable management channel.',
+                'specs' => json_encode([
+                    'weight' => '4.5kg',
+                    'material' => 'Gray cast iron',
+                    'diameter' => '180mm',
+                    'isolation' => 'SBR rubber feet',
+                    'channels' => '2x cable routing grooves',
+                ]),
+                'price' => 89.00,
+                'stock_quantity' => 8,
+                'sku' => 'MNT-HD-006',
+                'is_featured' => true,
+            ],
+            [
+                'category_id' => 4,
+                'name' => 'Clamp Mount Heavy-Gauge',
+                'slug' => 'clamp-mount-heavy-gauge',
+                'description' => 'Steel desk clamp with 70mm maximum grip. Non-marring pad surface. Fits all base standards.',
+                'specs' => json_encode([
+                    'max_thickness' => '70mm',
+                    'material' => 'Cold rolled steel',
+                    'finish' => 'Black oxide',
+ ]),
+                'price' => 45.00,
+                'stock_quantity' => 56,
+                'sku' => 'MNT-CLP-007',
+            ],
+            [
+                'category_id' => 4,
+                'name' => 'Joint Repair Kit',
+                'slug' => 'joint-repair-kit',
+                'description' => 'Replacement bearings, tension springs, and retaining clips for Series-X arms. Includes torque driver.',
+ 'specs' => json_encode([
+                    'compatibility' => 'Series-X / Series-M',
+                    'contents' => 'Bearings, springs, clips, driver',
+                    'warranty' => '2 years',
+                ]),
+                'price' => 34.50,
+                'stock_quantity' => 23,
+                'sku' => 'KIT-JNT-008',
+            ],
+            [
+                'category_id' => 1,
+                'name' => 'Micro Precision Arm',
+                'slug' => 'micro-precision-arm',
+                'description' => 'Compact 3-axis arm for soldering and microscope work. 250mm reach, feather-touch adjustment.',
+ 'specs' => json_encode([
+ 'axes' => 3,
+                    'reach' => '250mm',
+                    'material' => 'Anodized aluminum',
+                    'weight' => '0.6kg',
+                ]),
+                'price' => 149.00,
+                'stock_quantity' => 67,
+                'sku' => 'MAL-MP-009',
+            ],
+        ];
+
+        foreach ($products as $product) {
+            Product::create($product + [
+                'image_path' => null,
+                'status' => 'active',
+            ]);
+        }
+    }
+}
+
+// database/seeders/OrderSeeder.php
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\{Order, OrderItem, Cart, CartItem, Wishlist, WishlistItem};
+
+class OrderSeeder extends Seeder
+{
+    public function run(): void
+ {
+        $userId = 1; // Alex Chen
+
+        // Cart for user 1
+        $cart = Cart::create(['user_id' => $userId]);
+        CartItem::create(['cart_id' => $cart->id, 'product_id' => 1, 'quantity' => 1]); // Series-X
+        CartItem::create(['cart_id' => $cart->id, 'product_id' => 5, 'quantity' => 2]); // Power brick x2
+
+        // Wishlist for user 1
+        $wishlist = Wishlist::create(['user_id' => $userId]);
+        WishlistItem::create(['wishlist_id' => $wishlist->id, 'product_id' => 2]); // 7-Axis
+ WishlistItem::create(['wishlist_id' => $wishlist->id, 'product_id' => 7]); // Clamp WishlistItem::create(['wishlist_id' => $wishlist->id, 'product_id' => 1]); // Series-X
+
+        // Orders with timestamps for history demo
+        $orders = [
+            [
+                'order_number' => 'ORD-2026-00891',
+                'total' => 538.00,
+                'status' => 'delivered',
+                'ordered_at' => '2026-07-12 14:33:09',
+                'items' => [
+                    ['product_id' => 2, 'name' => '7-Axis Interference Arm', 'price' => 449.00, 'qty' => 1],
+                    ['product_id' => 6, 'name' => 'Heavy-Duty Cast Base', 'price' => 89.00, 'qty' => 1],
+                ]
+            ],
+            [
+                'order_number' => 'ORD-2026-00712',
+                'total' => 258.00,
+                'status' => 'delivered',
+                'ordered_at' => '2026-06-28 09:15:44',
+                'items' => [
+                    ['product_id' => 3, 'name' => 'Matrix LED Head Module', 'price' => 129.00, 'qty' => 2],
+                ]
+            ],
+            [
+                'order_number' => 'ORD-2026-00845',
+                'total' => 89.00,
+                'status' => 'shipped',
+                'ordered_at' => '2026-07-10 11:22:01',
+                'items' => [
+                    ['product_id' => 5, 'name' => '24V DC Power System', 'price' => 89.00, 'qty' => 1],
+                ]
+            ],
+            [
+                'order_number' => 'ORD-2026-00902',
+                'total' => 34.50,
+                'status' => 'processing',
+                'ordered_at' => '2026-07-13 08:45:12',
+                'items' => [
+                    ['product_id' => 8, 'name' => 'Joint Repair Kit', 'price' => 34.50, 'qty' => 1],
+                ]
+            ],
+            [
+                'order_number' => 'ORD-2026-00910',
+                'total' => 249.00,
+                'status' => 'pending',
+                'ordered_at' => '2026-07-13 16:01:00',
+                'items' => [
+                    ['product_id' => 1, 'name' => 'Series-X Articulated Lamp', 'price' => 249.00, 'qty' => 1],
+                ]
+            ],
+        ];
+
+        foreach ($orders as $orderData) {
+ $items = $orderData['items'];
+            unset($orderData['items']);
+
+            $order = Order::create(array_merge($orderData, [
+                'user_id' => $userId,
+                'shipping_address' => json_encode([
+                    'name' => 'Alex Chen',
+                    'line_1' => '404 Circuit Drive',
+                    'city' => 'Seattle',
+                    'postal' => '98109',
+                    'country' => 'USA',
+                ]),
+]));
+
+            foreach ($items as $item) {
+                OrderItem::create([
+                    'order_id' => $order->id,
+                    'product_id' => $item['product_id'],
+                    'product_name' => $item['name'],
+                    'price' => $item['price'],
+                    'quantity' => $item['qty'],
+                ]);
+            }
+        }
+    }
+}
+```

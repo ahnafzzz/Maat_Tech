@@ -1,0 +1,13 @@
+{
+  "name": "maat-tech",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MAAT TECHNOLOGIE BD Laravel storefront and admin application.",
+  "scripts": {
+    "dev": "cd laravel-app && php artisan serve --host=127.0.0.1 --port=3000",
+    "start": "cd laravel-app && php artisan serve --host=127.0.0.1 --port=3000",
+    "start:static": "python3 -m http.server 3000",
+    "cpanel:package": "bash deployment/prepare-cpanel-package.sh",
+    "laravel:low-resource": "bash deployment/prepare-low-resource-laravel.sh"
+  }
+}

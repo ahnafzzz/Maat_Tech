@@ -1,0 +1,427 @@
+```php
+<?php
+// app/Models/Admin.php
+
+namespace App\Models;
+
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+class Admin extends Authenticatable
+{
+    use Notifiable;
+
+    protected $fillable = [
+        'admin_id', 'name', 'email', 'password', 
+        'is_lead', 'can_invite', 'status'
+    ];
+
+    protected $hidden = ['password', 'remember_token'];
+
+    protected $casts = [
+        'is_lead' => 'boolean',
+        'can_invite' => 'boolean',
+        'email_verified_at' => 'datetime',
+    ];
+
+    public function setAdminIdAttribute($value): void
+    {
+        $this->attributes['admin_id'] = strtoupper($value);
+    }
+
+    public function isLead(): bool
+    {
+        return $this->is_lead === true;
+    }
+
+    public function sentInvitations()
+    {
+        return $this->hasMany(AdminInvitationRequest::class, 'requester_admin_id');
+    }
+}
+
+// app/Models/AdminInvitationRequest.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class AdminInvitationRequest extends Model
+{
+    protected $fillable = [
+        'requester_admin_id', 'target_email', 'target_name',
+        'proposed_admin_id', 'status', 'processed_by_admin_id',
+        'lead_decision_at', 'lead_notes'
+    ];
+
+    protected $casts = [
+        'lead_decision_at' => 'datetime',
+    ];
+
+    public function requester()
+    {
+        return $this->belongsTo(Admin::class, 'requester_admin_id');
+    }
+
+    public function processor()
+    {
+        return $this->belongsTo(Admin::class, 'processed_by_admin_id');
+    }
+}
+
+// app/Models/Cart.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Cart extends Model
+{
+    protected $fillable = ['user_id', 'session_id'];
+
+    public function items()
+    {
+        return $this->hasMany(CartItem::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+
+// app/Models/CartItem.php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class CartItem extends Model
+{
+    protected $fillable = ['cart_id', 'product_id', 'quantity'];
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+}
+
+// app/Services/SessionCartService.php
+namespace App\Services;
+
+class SessionCartService
+{
+    private const CART_KEY = 'mecharm_cart_v1';
+    private const WISH_KEY = 'mecharm_wish_v1';
+
+    public function getCart(): array
+    {
+        return session()->get(self::CART_KEY, []);
+    }
+
+    public function addToCart(int $productId, int $qty = 1): void
+    {
+        $cart = $this->getCart();
+        $existing = $cart[$productId] ?? null;
+        
+        $cart[$productId] = [
+            'product_id' => $productId,
+            'qty' => ($existing['qty'] ?? 0) + $qty,
+            'added_at' => now()->toDateTimeString(),
+        ];
+        
+        session()->put(self::CART_KEY, $cart);
+    }
+
+    public function removeFromCart(int $productId): void
+    {
+        $cart = $this->getCart();
+        unset($cart[$productId]);
+        session()->put(self::CART_KEY, $cart);
+    }
+
+    public function getWishlist(): array
+    {
+        return session()->get(self::WISH_KEY, []);
+    }
+
+    public function toggleWishlist(int $productId): bool
+    {
+        $wish = $this->getWishlist();
+        $exists = isset($wish[$productId]);
+        
+        if ($exists) {
+            unset($wish[$productId]);
+ session()->put(self::WISH_KEY, $wish);
+            return false; // Removed
+        }
+        
+        $wish[$productId] = [
+            'product_id' => $productId,
+            'added_at' => now()->toDateTimeString(),
+        ];
+        session()->put(self::WISH_KEY, $wish);
+        return true; // Added
+    }
+
+    public function clearAll(): void
+    {
+        session()->forget([self::CART_KEY, self::WISH_KEY]);
+    }
+
+    public function cartCount(): int
+    {
+        return collect($this->getCart())->sum('qty');
+    }
+
+    public function wishlistCount(): int
+    {
+        return count($this->getWishlist());
+    }
+}
+
+// app/Services/CartMergeService.php
+namespace App\Services;
+
+use App\Models\{Cart, CartItem, User, Wishlist, WishlistItem};
+
+class CartMergeService
+{
+    public function mergeCart(User $user): void
+    {
+        $session = app(SessionCartService::class);
+        $sessionCart = $session->getCart();
+        
+        if (empty($sessionCart)) return;
+
+        $cart = Cart::firstOrCreate(
+            ['user_id' => $user->id],
+            ['session_id' => null]
+        );
+
+        foreach ($sessionCart as $item) {
+            $existing = CartItem::where('cart_id', $cart->id)
+ ->where('product_id', $item['product_id'])
+                ->first();
+
+            if ($existing) {
+                $existing->increment('quantity', $item['qty']);
+            } else {
+                CartItem::create([
+                    'cart_id' => $cart->id,
+                    'product_id' => $item['product_id'],
+                    'quantity' => $item['qty'],
+                ]);
+            }
+        }
+
+        $session->clearAll(); // Only clears cart/wish session, not all session
+    }
+
+    public function mergeWishlist(User $user): void
+    {
+        $session = app(SessionCartService::class);
+        $sessionWish = $session->getWishlist();
+        
+        if (empty($sessionWish)) return;
+
+        $wishlist = Wishlist::firstOrCreate(['user_id' => $user->id]);
+
+        foreach ($sessionWish as $item) {
+            WishlistItem::firstOrCreate([
+ 'wishlist_id' => $wishlist->id,
+                'product_id' => $item['product_id'],
+            ], ['added_at' => $item['added_at'] ?? now()]);
+        }
+    }
+}
+
+// app/Http/Middleware/EnsureLeadAdmin.php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class EnsureLeadAdmin
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $admin = auth()->guard('admin')->user();
+        
+        if (!$admin || !$admin->isLead()) {
+            abort(403, 'Access denied. Lead Administrator clearance required.');
+        }
+
+        return $next($request);
+    }
+}
+
+// app/Http/Middleware/MergeSessionCart.php
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use App\Services\CartMergeService;
+use Symfony\Component\HttpFoundation\Response;
+
+class MergeSessionCart
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        $response = $next($request);
+        
+        if (auth()->guard('web')->check()) {
+            $user = auth()->guard('web')->user();
+            
+            // Check flag so we don't merge on every request
+            if (!session()->has('cart_merged')) {
+ app(CartMergeService::class)->mergeCart($user);
+                app(CartMergeService::class)->mergeWishlist($user);
+                session()->put('cart_merged', true);
+            }
+        }
+
+        return $response;
+    }
+}
+
+// app/Http/Controllers/Admin/AdminAuthController.php
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
+
+class AdminAuthController extends Controller
+{
+    public function showLogin()
+    {
+        return view('admin.auth.login');
+    }
+
+    public function login(Request $request)
+    {
+        $credentials = $request->validate([
+            'admin_id' => ['required', 'string', 'regex:/^ADM-[0-9]{4}-[A-Z]$/'],
+            'password' => ['required'],
+        ]);
+
+        $credentials['admin_id'] = strtoupper($credentials['admin_id']);
+        // Verify active status
+        $admin = \App\Models\Admin::where('admin_id', $credentials['admin_id'])->first();
+        
+        if (!$admin || $admin->status !== 'active') {
+            throw ValidationException::withMessages([
+                'admin_id' => 'Invalid credentials or account inactive.',
+            ]);
+        }
+
+        if (Auth::guard('admin')->attempt($credentials, $request->boolean('remember'))) {
+            $request->session()->regenerate();
+            return redirect()->intended(route('admin.dashboard'));
+        }
+
+        throw ValidationException::withMessages([
+            'admin_id' => 'Authentication failed. Verify ID and password.',
+        ]);
+    }
+
+    public function logout(Request $request)
+    {
+        Auth::guard('admin')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('admin.login');
+    }
+}
+
+// app/Http/Controllers/Admin/AdminInvitationController.php
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Models\AdminInvitationRequest;
+use App\Models\Admin;
+use App\Services\CartMergeService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+class AdminInvitationController extends Controller
+{
+    public function index()
+    {
+        $requests = AdminInvitationRequest::with('requester')
+            ->where('status', 'pending')
+            ->latest()
+            ->get();
+            
+        return view('admin.invitations.index', compact('requests'));
+    }
+
+    public function create()
+    {
+        return view('admin.invitations.create');
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'target_email' => 'required|email|unique:admins,email',
+            'target_name' => 'required|string|max:255',
+            'proposed_admin_id' => ['required', 'string', 'regex:/^ADM-[0-9]{4}-[A-Z]$/', 'unique:admins,admin_id'],
+        ]);
+
+        AdminInvitationRequest::create([
+            'requester_admin_id' => auth()->guard('admin')->id(),
+            'target_email' => $request->target_email,
+            'target_name' => $request->target_name,
+            'proposed_admin_id' => strtoupper($request->proposed_admin_id),
+ 'status' => 'pending',
+        ]);
+
+        return redirect()->route('admin.dashboard')
+            ->with('status', 'Invitation request submitted to Lead Admin.');
+    }
+
+    public function approve(AdminInvitationRequest $invitation)
+    {
+        if ($invitation->status !== 'pending') {
+            return back()->with('error', 'Request already processed.');
+        }
+
+        $tempPassword = Str::random(16);
+
+        $admin = Admin::create([
+            'admin_id' => $invitation->proposed_admin_id,
+            'name' => $invitation->target_name,
+            'email' => $invitation->target_email,
+            'password' => Hash::make($tempPassword),
+            'can_invite' => false,
+            'status' => 'active',
+        ]);
+
+        $invitation->update([
+            'status' => 'approved',
+            'processed_by_admin_id' => auth()->guard('admin')->id(),
+            'lead_decision_at' => now(),
+        ]);
+
+        // TODO: Dispatch email with $tempPassword
+
+        return back()->with('status', "Admin {$admin->admin_id} created. Credentials dispatched.");
+    }
+
+    public function reject(Request $request, AdminInvitationRequest $invitation)
+    {
+        $request->validate(['lead_notes' => 'nullable|string|max:500']);
+        
+        $invitation->update([
+            'status' => 'rejected',
+            'processed_by_admin_id' => auth()->guard('admin')->id(),
+            'lead_decision_at' => now(),
+            'lead_notes' => $request->lead_notes,
+        ]);
+
+        return back()->with('status', 'Invitation request rejected.');
+    }
+}
+```

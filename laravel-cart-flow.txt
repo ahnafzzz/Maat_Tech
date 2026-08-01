@@ -1,0 +1,165 @@
+```php
+<?php
+// app/Http/Controllers/CartController.php
+
+namespace App\Http\Controllers;
+
+use App\Models\{Cart, CartItem, Product};
+use App\Services\SessionCartService;
+use Illuminate\Http\Request;
+
+class CartController extends Controller
+{
+    public function index(Request $request)
+    {
+        // If authenticated: pull from DB with relationships
+        if (auth()->check()) {
+            $cart = Cart::with('items.product')->where('user_id', auth()->id())->first();
+            $items = $cart ? $cart->items : collect();
+            $isDb = true;
+        } else {
+            // Guest: resolve session IDs to products
+            $sessionCart = app(SessionCartService::class)->getCart();
+            $productIds = collect($sessionCart)->pluck('product_id');
+            $products = Product::whereIn('id', $productIds)->get()->keyBy('id');
+            
+            $items = collect($sessionCart)->map(function($item) use ($products) {
+                return (object) [
+                    'product' => $products[$item['product_id']] ?? null,
+                    'quantity' => $item['qty'],
+                ];
+            })->filter(fn($i) => $i->product);
+ $isDb = false;
+        }
+
+        return view('cart.index', compact('items', 'isDb'));
+    }
+
+    public function add(Request $request)
+    {
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'quantity' => 'integer|min:1|max:10',
+        ]);
+
+        $product = Product::findOrFail($request->product_id);
+
+        if (auth()->check()) {
+            $cart = Cart::firstOrCreate(['user_id' => auth()->id()]);
+            
+            CartItem::updateOrCreate(
+                ['cart_id' => $cart->id, 'product_id' => $product->id],
+                ['quantity' => \DB::raw("quantity + " . ($request->quantity ?? 1))]
+            );
+        } else {
+            app(SessionCartService::class)->addToCart(
+                $product->id, 
+                $request->quantity ?? 1
+            );
+        }
+
+        return redirect()->back()->with('status', 'Added to cart.');
+    }
+
+    public function remove(Product $product)
+    {
+        if (auth()->check()) {
+            $cart = Cart::where('user_id', auth()->id())->first();
+            if ($cart) {
+                CartItem::where('cart_id', $cart->id)
+ ->where('product_id', $product->id)
+                    ->delete();
+            }
+        } else {
+            app(SessionCartService::class)->removeFromCart($product->id);
+        }
+
+        return redirect()->back()->with('status', 'Removed from cart.');
+    }
+}
+
+// app/Http/Controllers/WishlistController.php
+namespace App\Http\Controllers;
+
+use App\Models\{Wishlist, WishlistItem};
+use App\Services\SessionCartService;
+use Illuminate\Http\Request;
+
+class WishlistController extends Controller
+{
+    public function index()
+    {
+        if (auth()->check()) {
+            $wishlist = Wishlist::with('items.product')->where('user_id', auth()->id())->first();
+            $items = $wishlist ? $wishlist->items : collect();
+        } else {
+            $sessionWish = app(SessionCartService::class)->getWishlist();
+            $ids = collect($sessionWish)->pluck('product_id');
+            $products = \App\Models\Product::whereIn('id', $ids)->get()->keyBy('id');
+            
+            $items = collect($sessionWish)->map(function($item) use ($products) {
+ return (object) ['product' => $products[$item['product_id']] ?? null];
+            })->filter(fn($i) => $i->product);
+        }
+
+        return view('wishlist.index', compact('items'));
+    }
+
+    public function toggle(Request $request)
+    {
+        $request->validate(['product_id' => 'required|exists:products,id']);
+ $productId = $request->product_id;
+
+        if (auth()->check()) {
+            $wishlist = Wishlist::firstOrCreate(['user_id' => auth()->id()]);
+            
+            $existing = WishlistItem::where('wishlist_id', $wishlist->id)
+ ->where('product_id', $productId)
+                ->first();
+
+            if ($existing) {
+                $existing->delete();
+                $added = false;
+            } else {
+                WishlistItem::create([
+                    'wishlist_id' => $wishlist->id,
+                    'product_id' => $productId,
+                ]);
+                $added = true;
+            }
+        } else {
+            $added = app(SessionCartService::class)->toggleWishlist($productId);
+        }
+
+        return response()->json([
+            'added' => $added,
+            'count' => auth()->check()                ? WishlistItem::whereHas('wishlist', fn($q) => $q->where('user_id', auth()->id()))->count()
+                : app(SessionCartService::class)->wishlistCount()
+        ]);
+    }
+}
+
+// app/Http/Controllers/OrderHistoryController.php
+namespace App\Http\Controllers;
+
+use App\Models\Order;
+
+class OrderHistoryController extends Controller
+{
+    public function index()
+    {
+        $orders = Order::with('items.product')
+            ->where('user_id', auth()->id())
+            ->orderBy('ordered_at', 'desc')
+            ->paginate(10);
+
+        return view('history.index', compact('orders'));
+    }
+
+    public function show(Order $order)
+    {
+        $this->authorize('view', $order); // Ensure ownership via Policy
+        return view('history.show', compact('order'));
+    }
+}
+```
