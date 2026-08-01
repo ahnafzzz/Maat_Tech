@@ -24,4 +24,4 @@ ENV COMPOSER_MEMORY_LIMIT=-1
 # Install production PHP dependencies
 RUN composer install --optimize-autoloader --no-dev --no-interaction
 
-CMD php artisan serve --host 0.0.0.0 --port $PORT
+CMD php artisan migrate --force && php artisan serve --host 0.0.0.0 --port $PORT
