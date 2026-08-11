@@ -56,9 +56,9 @@
                 <article class="glass-panel group overflow-hidden transition hover:-translate-y-1 hover:border-tech-600">
                     <a href="{{ route('products.show', $product->slug) }}" class="relative block aspect-[4/3] overflow-hidden bg-[#0d121b]">
                         @if(!empty($product->images))
-                            <img src="{{ asset('storage/' . $product->images[0]) }}" alt="{{ $product->name }}" class="h-full w-full object-cover transition duration-300 group-hover:scale-105" loading="lazy">
+                            <img src="{{ asset('storage/' . $product->images[0]) }}" alt="{{ $product->name }}" class="block h-full w-full object-cover object-center transition duration-300 group-hover:scale-105" loading="lazy">
                         @elseif($product->image)
-                            <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="h-full w-full object-cover transition duration-300 group-hover:scale-105" loading="lazy">
+                            <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="block h-full w-full object-cover object-center transition duration-300 group-hover:scale-105" loading="lazy">
                         @else
                             <div class="grid h-full place-items-center text-tech-400"><i data-lucide="image-off" class="h-16 w-16" stroke-width="1"></i></div>
                         @endif
