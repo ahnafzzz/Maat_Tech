@@ -13,10 +13,10 @@
 <body class="min-h-screen bg-[#050609] font-sans text-white">
     <div class="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(38,49,65,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(38,49,65,.35)_1px,transparent_1px)] [background-size:32px_32px]"></div>
     <main class="mx-auto flex min-h-screen max-w-md items-center px-5">
-        <form method="POST" action="{{ route('admin.login.store') }}" class="w-full border border-tech-800 bg-cyber-panel/95 p-7 shadow-2xl shadow-teal-950/20 sm:p-9">
+        <form method="POST" action="{{ secure_url(route('admin.login.store', [], false)) }}" class="w-full border border-tech-800 bg-cyber-panel/95 p-7 shadow-2xl shadow-teal-950/20 sm:p-9">
             @csrf
             <div class="flex items-center gap-3 border-l-2 border-tech-500 pl-3">
-                <img src="{{ asset('images/brand/maat-tech-logo.png') }}" alt="MAAT TECHNOLOGIE BD" class="h-12 w-14 shrink-0 object-contain object-left [filter:drop-shadow(0_0_6px_rgba(45,212,191,.25))]">
+                <img src="{{ secure_asset('images/brand/maat-tech-logo.png') }}" alt="MAAT TECHNOLOGIE BD" class="h-12 w-14 shrink-0 object-contain object-left [filter:drop-shadow(0_0_6px_rgba(45,212,191,.25))]">
                 <div><p class="font-mono text-sm font-bold tracking-wider">ADMIN_ACCESS_TERMINAL</p><p class="font-mono text-[9px] tracking-[.16em] text-tech-400">CLEARANCE REQUIRED</p></div>
             </div>
             <p class="mt-7 text-sm leading-6 text-slate-400">Restricted system control. Authenticate with a valid administrative identifier to continue.</p>

@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
             'ensure.order.owner' => \App\Http\Middleware\EnsureUserOwnsOrder::class,
         ]);
+
+        $middleware->append(\Illuminate\Foundation\Http\Middleware\TrustProxies::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
