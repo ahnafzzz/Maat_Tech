@@ -6,16 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Services\SessionCartService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CartController extends Controller
 {
-    public function index()
-    {
-        $cart = Cart::firstOrCreate(['user_id' => Auth::id(), 'session_id' => session()->getId()]);
+    public function __construct(private readonly SessionCartService $cartService) {}
 
-        return response()->json($cart->load('items.product'));
+    public function index(Request $request)
+    {
+        $customer = $request->user('web');
+        $cart = Cart::firstOrCreate(['user_id' => $customer->id], ['session_id' => null]);
+        $items = CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $customer->id))
+            ->with('product')->orderBy('id')->get();
+
+        return response()->json([...$cart->toArray(), 'items' => $items]);
     }
 
     public function store(Request $request)
@@ -25,18 +30,11 @@ class CartController extends Controller
             'quantity' => 'required|integer|min:1',
         ]);
 
-        $cart = Cart::firstOrCreate(['user_id' => Auth::id(), 'session_id' => session()->getId()]);
+        $customer = $request->user('web');
         $product = Product::findOrFail($data['product_id']);
+        $this->cartService->addForCustomer($customer, $product, $data['quantity']);
 
-        if ($product->stock < $data['quantity']) {
-            return response()->json(['message' => 'Not enough stock'], 422);
-        }
-
-        $item = CartItem::firstOrNew(['cart_id' => $cart->id, 'product_id' => $product->id]);
-        $item->quantity += $data['quantity'];
-        $item->save();
-
-        return response()->json($cart->load('items.product'));
+        return $this->index($request);
     }
 
     public function destroy(Request $request, string $id)

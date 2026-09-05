@@ -11,7 +11,7 @@
         <a href="{{ route('cart.index') }}" class="text-xs font-mono text-tech-400 hover:text-tech-300">RETURN_TO_CART</a>
     </header>
 
-    @guest
+    @guest('web')
         <div class="mb-6 rounded-lg border border-tech-700/70 bg-tech-950/50 p-4 text-sm text-tech-200">You can place an order as guest now, then create or sign in to an account later to manage future orders and saved addresses.</div>
     @endguest
 
@@ -20,8 +20,8 @@
             @csrf
             <h2 class="font-mono text-sm text-tech-300">DELIVERY_IDENTITY</h2>
             <div class="mt-6 grid gap-4 sm:grid-cols-2">
-                <label class="text-xs font-mono text-slate-400">FULL_NAME<input name="name" required value="{{ old('name', auth()->user()?->name) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>
-                <label class="text-xs font-mono text-slate-400">PHONE_NUMBER<input name="phone" required value="{{ old('phone', auth()->user()?->phone) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>
+                <label class="text-xs font-mono text-slate-400">FULL_NAME<input name="name" required value="{{ old('name', auth('web')->user()?->name) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>
+                <label class="text-xs font-mono text-slate-400">PHONE_NUMBER<input name="phone" required value="{{ old('phone', auth('web')->user()?->phone) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>
                 <label class="text-xs font-mono text-slate-400">DISTRICT
                     <select id="checkout-district" name="district" required class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500">
                         <option value="">Select district</option>
@@ -32,7 +32,7 @@
                 </label>
                 <label class="text-xs font-mono text-slate-400">PAYMENT_METHOD<input disabled value="Cash on Delivery (COD)" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#121722] p-3 text-sm text-slate-400"></label>
             </div>
-            <label class="mt-4 block text-xs font-mono text-slate-400">FULL_ADDRESS<textarea name="address" required rows="4" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500">{{ old('address', auth()->user()?->address) }}</textarea></label>
+            <label class="mt-4 block text-xs font-mono text-slate-400">FULL_ADDRESS<textarea name="address" required rows="4" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500">{{ old('address', auth('web')->user()?->address) }}</textarea></label>
             <label class="mt-4 block text-xs font-mono text-slate-400">CUSTOMER_NOTE<textarea name="customer_note" rows="3" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500">{{ old('customer_note') }}</textarea></label>
             <div class="mt-6 rounded-lg border border-cyber-border bg-[#0d121b] p-4 text-xs leading-6 text-slate-400">
                 <p>Current payment method: Cash on Delivery only.</p>

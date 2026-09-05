@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\CheckoutService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
@@ -23,8 +24,8 @@ class OrderController extends Controller
             'payment_method' => ['required', 'in:cod'],
             'shipping_method' => ['required', 'in:pathao'],
             'shipping_address' => 'required|array',
-            'shipping_address.name' => ['nullable', 'string', 'max:120'],
-            'shipping_address.phone' => ['nullable', 'string', 'max:30'],
+            'shipping_address.name' => ['sometimes', 'required', 'string', 'max:120'],
+            'shipping_address.phone' => ['sometimes', 'required', 'string', 'max:30'],
             'shipping_address.address' => ['required', 'string', 'max:2000'],
             'shipping_address.district' => ['nullable', 'string', 'max:100'],
             'shipping_address.city' => ['nullable', 'string', 'max:100'],
@@ -43,10 +44,20 @@ class OrderController extends Controller
         }
 
         $customer = $request->user('web');
+        $contact = Validator::make(['shipping_address' => [
+            'name' => trim((string) ($data['shipping_address']['name'] ?? $customer->name)),
+            'phone' => trim((string) ($data['shipping_address']['phone'] ?? $customer->phone)),
+            'address' => trim($data['shipping_address']['address']),
+        ]], [
+            'shipping_address.name' => ['required', 'string', 'max:120'],
+            'shipping_address.phone' => ['required', 'string', 'max:30'],
+            'shipping_address.address' => ['required', 'string', 'max:2000'],
+        ])->validate()['shipping_address'];
+
         $order = $this->checkoutService->checkout($customer, [], [
-            'name' => $data['shipping_address']['name'] ?? $customer->name,
-            'phone' => $data['shipping_address']['phone'] ?? $customer->phone ?? '',
-            'address' => $data['shipping_address']['address'],
+            'name' => $contact['name'],
+            'phone' => $contact['phone'],
+            'address' => $contact['address'],
             'district' => $district ?? $city,
             'customer_note' => $data['customer_note'] ?? null,
         ]);
