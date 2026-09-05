@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Models\Cart;
 use App\Models\CartItem;
+use App\Models\CheckoutAttempt;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -14,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class CheckoutService
 {
+    public const IDEMPOTENCY_KEY_PATTERN = '/\A[A-Za-z0-9][A-Za-z0-9._:-]{15,127}\z/';
+
     public const DISTRICTS = [
         'Bagerhat', 'Bandarban', 'Barguna', 'Barishal', 'Bhola', 'Bogura', 'Brahmanbaria', 'Chandpur',
         'Chapainawabganj', 'Chattogram', 'Chuadanga', "Cox's Bazar", 'Cumilla', 'Dhaka', 'Dinajpur',
@@ -55,72 +59,186 @@ class CheckoutService
         ];
     }
 
-    public function checkout(?User $customer, array $guestCart, array $details): Order
+    public function checkout(
+        ?User $customer,
+        array $guestCart,
+        array $details,
+        string $attemptKey,
+        ?string $guestIdentity = null
+    ): CheckoutResult {
+        $details = $this->normalizedDetails($details);
+        [$ownerType, $ownerIdentifier] = $this->attemptOwner($customer, $guestIdentity);
+        $fingerprint = hash('sha256', json_encode($details, JSON_THROW_ON_ERROR));
+
+        try {
+            return DB::transaction(function () use (
+                $customer,
+                $guestCart,
+                $details,
+                $attemptKey,
+                $ownerType,
+                $ownerIdentifier,
+                $fingerprint
+            ): CheckoutResult {
+                $existing = CheckoutAttempt::where([
+                    'owner_type' => $ownerType,
+                    'owner_identifier' => $ownerIdentifier,
+                    'attempt_key' => $attemptKey,
+                ])->lockForUpdate()->first();
+
+                if ($existing) {
+                    return $this->replay($existing, $fingerprint);
+                }
+
+                $attempt = CheckoutAttempt::create([
+                    'owner_type' => $ownerType,
+                    'owner_identifier' => $ownerIdentifier,
+                    'attempt_key' => $attemptKey,
+                    'fingerprint' => $fingerprint,
+                ]);
+
+                [$quantities, $cartItemIds] = $customer
+                    ? $this->lockedCustomerCart($customer)
+                    : [$this->validatedGuestCart($guestCart), []];
+
+                if ($quantities === []) {
+                    throw ValidationException::withMessages(['cart' => 'Your cart is empty.']);
+                }
+
+                $productIds = array_keys($quantities);
+                sort($productIds, SORT_NUMERIC);
+                $products = Product::whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+
+                if ($products->count() !== count($productIds)) {
+                    throw ValidationException::withMessages(['cart' => 'A product in your cart is no longer available.']);
+                }
+
+                $subtotalMinor = 0;
+                $snapshot = [];
+                foreach ($productIds as $productId) {
+                    $product = $products->get($productId);
+                    $quantity = $quantities[$productId];
+                    if ($product->status !== 'active') {
+                        throw ValidationException::withMessages(['cart' => "$product->name is not currently available."]);
+                    }
+                    if ($product->stock < $quantity) {
+                        throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
+                    }
+                    $unitPriceMinor = $this->effectivePriceMinor($product);
+                    $subtotalMinor += $unitPriceMinor * $quantity;
+                    $snapshot[] = [
+                        'product_id' => $productId,
+                        'quantity' => $quantity,
+                        'unit_price' => $this->minorToDecimal($unitPriceMinor),
+                    ];
+                }
+
+                $shippingMinor = $this->shippingFeeMinor($details['district']);
+                $order = Order::create([
+                    'user_id' => $customer?->id,
+                    'order_number' => 'MECH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(12)),
+                    'status' => 'pending', 'payment_method' => 'cod', 'payment_status' => 'pending',
+                    'shipping_method' => 'pathao', 'subtotal' => $this->minorToDecimal($subtotalMinor),
+                    'shipping_fee' => $this->minorToDecimal($shippingMinor),
+                    'total' => $this->minorToDecimal($subtotalMinor + $shippingMinor),
+                    'customer_name' => $details['name'], 'customer_phone' => $details['phone'],
+                    'district' => $details['district'], 'address' => $details['address'],
+                    'customer_note' => $details['customer_note'],
+                    'shipping_address' => ['name' => $details['name'], 'phone' => $details['phone'],
+                        'district' => $details['district'], 'city' => $details['district'], 'address' => $details['address']],
+                    'placed_at' => now(),
+                ]);
+
+                foreach ($snapshot as $item) {
+                    $product = $products->get($item['product_id']);
+                    $order->items()->create($item);
+                    $updated = Product::whereKey($item['product_id'])->where('stock', '>=', $item['quantity'])
+                        ->update(['stock' => DB::raw('stock - '.(int) $item['quantity'])]);
+                    if ($updated !== 1) {
+                        throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
+                    }
+                }
+
+                if ($cartItemIds !== []) {
+                    CartItem::whereIn('id', $cartItemIds)->delete();
+                }
+
+                $attempt->update([
+                    'cart_snapshot' => $snapshot,
+                    'order_id' => $order->id,
+                    'completed_at' => now(),
+                ]);
+
+                return new CheckoutResult($order->load('items.product'), false);
+            }, 3);
+        } catch (QueryException $exception) {
+            if (! $this->isAttemptUniquenessViolation($exception)) {
+                throw $exception;
+            }
+
+            return DB::transaction(function () use ($ownerType, $ownerIdentifier, $attemptKey, $fingerprint): CheckoutResult {
+                $attempt = CheckoutAttempt::where([
+                    'owner_type' => $ownerType,
+                    'owner_identifier' => $ownerIdentifier,
+                    'attempt_key' => $attemptKey,
+                ])->lockForUpdate()->first();
+
+                if (! $attempt) {
+                    throw new \RuntimeException('The checkout attempt could not be resolved after contention.');
+                }
+
+                return $this->replay($attempt, $fingerprint);
+            }, 3);
+        }
+    }
+
+    private function normalizedDetails(array $details): array
     {
-        return DB::transaction(function () use ($customer, $guestCart, $details): Order {
-            [$quantities, $cartItemIds] = $customer
-                ? $this->lockedCustomerCart($customer)
-                : [$this->validatedGuestCart($guestCart), []];
+        return [
+            'name' => trim((string) $details['name']),
+            'phone' => trim((string) $details['phone']),
+            'address' => trim((string) $details['address']),
+            'district' => $this->normalizeDistrict((string) $details['district']),
+            'customer_note' => isset($details['customer_note']) && trim((string) $details['customer_note']) !== ''
+                ? trim((string) $details['customer_note'])
+                : null,
+            'payment_method' => 'cod',
+            'shipping_method' => 'pathao',
+        ];
+    }
 
-            if ($quantities === []) {
-                throw ValidationException::withMessages(['cart' => 'Your cart is empty.']);
-            }
+    private function attemptOwner(?User $customer, ?string $guestIdentity): array
+    {
+        if ($customer) {
+            return ['customer', (string) $customer->getKey()];
+        }
 
-            $productIds = array_keys($quantities);
-            sort($productIds, SORT_NUMERIC);
-            $products = Product::whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        if (! is_string($guestIdentity) || $guestIdentity === '') {
+            throw new \InvalidArgumentException('A server-controlled guest checkout identity is required.');
+        }
 
-            if ($products->count() !== count($productIds)) {
-                throw ValidationException::withMessages(['cart' => 'A product in your cart is no longer available.']);
-            }
+        return ['guest', hash('sha256', $guestIdentity)];
+    }
 
-            $subtotalMinor = 0;
-            foreach ($productIds as $productId) {
-                $product = $products->get($productId);
-                $quantity = $quantities[$productId];
-                if ($product->status !== 'active') {
-                    throw ValidationException::withMessages(['cart' => "$product->name is not currently available."]);
-                }
-                if ($product->stock < $quantity) {
-                    throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
-                }
-                $subtotalMinor += $this->effectivePriceMinor($product) * $quantity;
-            }
+    private function replay(CheckoutAttempt $attempt, string $fingerprint): CheckoutResult
+    {
+        if (! hash_equals($attempt->fingerprint, $fingerprint)) {
+            throw ValidationException::withMessages([
+                'checkout_attempt_key' => 'This checkout key was already used with different checkout details.',
+            ])->status(409);
+        }
 
-            $shippingMinor = $this->shippingFeeMinor($details['district']);
-            $order = Order::create([
-                'user_id' => $customer?->id,
-                'order_number' => 'MECH-'.now()->format('YmdHis').'-'.Str::upper(Str::random(12)),
-                'status' => 'pending', 'payment_method' => 'cod', 'payment_status' => 'pending',
-                'shipping_method' => 'pathao', 'subtotal' => $this->minorToDecimal($subtotalMinor),
-                'shipping_fee' => $this->minorToDecimal($shippingMinor),
-                'total' => $this->minorToDecimal($subtotalMinor + $shippingMinor),
-                'customer_name' => $details['name'], 'customer_phone' => $details['phone'],
-                'district' => $details['district'], 'address' => $details['address'],
-                'customer_note' => $details['customer_note'] ?? null,
-                'shipping_address' => ['name' => $details['name'], 'phone' => $details['phone'],
-                    'district' => $details['district'], 'city' => $details['district'], 'address' => $details['address']],
-                'placed_at' => now(),
-            ]);
+        if (! $attempt->order_id || ! $attempt->completed_at) {
+            throw new \RuntimeException('The checkout attempt is not complete.');
+        }
 
-            foreach ($productIds as $productId) {
-                $product = $products->get($productId);
-                $quantity = $quantities[$productId];
-                $order->items()->create(['product_id' => $productId, 'quantity' => $quantity,
-                    'unit_price' => $this->minorToDecimal($this->effectivePriceMinor($product))]);
-                $updated = Product::whereKey($productId)->where('stock', '>=', $quantity)
-                    ->update(['stock' => DB::raw('stock - '.(int) $quantity)]);
-                if ($updated !== 1) {
-                    throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
-                }
-            }
+        return new CheckoutResult($attempt->order()->with('items.product')->firstOrFail(), true);
+    }
 
-            if ($cartItemIds !== []) {
-                CartItem::whereIn('id', $cartItemIds)->delete();
-            }
-
-            return $order->load('items.product');
-        }, 3);
+    private function isAttemptUniquenessViolation(QueryException $exception): bool
+    {
+        return in_array((string) $exception->getCode(), ['23000', '23505'], true)
+            && str_contains(strtolower($exception->getMessage()), 'checkout_attempt');
     }
 
     private function lockedCustomerCart(User $customer): array

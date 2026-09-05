@@ -18,6 +18,7 @@
     <div class="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
         <form method="POST" action="{{ route('checkout.place') }}" class="glass-panel p-6">
             @csrf
+            <input type="hidden" name="checkout_attempt_key" value="{{ $checkoutAttemptKey }}">
             <h2 class="font-mono text-sm text-tech-300">DELIVERY_IDENTITY</h2>
             <div class="mt-6 grid gap-4 sm:grid-cols-2">
                 <label class="text-xs font-mono text-slate-400">FULL_NAME<input name="name" required value="{{ old('name', auth('web')->user()?->name) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>

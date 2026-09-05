@@ -43,7 +43,8 @@ class CartCheckoutConsistencyTest extends TestCase
 
     private function checkoutPayload(): array
     {
-        return ['name' => 'Buyer', 'phone' => '01700000000', 'district' => 'Dhaka', 'address' => 'Test Road'];
+        return ['name' => 'Buyer', 'phone' => '01700000000', 'district' => 'Dhaka', 'address' => 'Test Road',
+            'checkout_attempt_key' => 'web-checkout-key-0001'];
     }
 
     private function apiPayload(array $shippingOverrides = []): array
@@ -182,7 +183,7 @@ class CartCheckoutConsistencyTest extends TestCase
             $product = Product::first() ?? $this->product();
             $cart = Cart::create(['user_id' => $customer->id]);
             $cart->items()->create(['product_id' => $product->id, 'quantity' => 1]);
-            $this->actingAs($customer, 'web')->postJson('/api/orders', $payload)
+            $this->actingAs($customer, 'web')->postJson('/api/orders', $payload, ['Idempotency-Key' => 'api-contact-key-'.$customer->id])
                 ->assertUnprocessable()->assertJsonValidationErrors('shipping_address.phone');
             $this->assertDatabaseHas('cart_items', ['cart_id' => $cart->id, 'quantity' => 1]);
             $this->assertSame(20, $product->fresh()->stock);
@@ -202,7 +203,8 @@ class CartCheckoutConsistencyTest extends TestCase
             if ($shipping === []) {
                 unset($payload['shipping_address']['phone']);
             }
-            $response = $this->actingAs($customer, 'web')->postJson('/api/orders', $payload)->assertCreated();
+            $response = $this->actingAs($customer, 'web')->postJson('/api/orders', $payload,
+                ['Idempotency-Key' => 'api-contact-key-'.$customer->id])->assertCreated();
             $response->assertJsonPath('customer_phone', $shipping['phone'] ?? $customer->phone);
             $this->app['auth']->forgetGuards();
         }

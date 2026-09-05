@@ -49,7 +49,8 @@ class CheckoutTest extends TestCase
     private function webPayload(array $overrides = []): array
     {
         return array_merge(['name' => 'Buyer', 'phone' => '01700000000', 'district' => ' DhAkA ',
-            'address' => '123 Test Road', 'customer_note' => 'Careful'], $overrides);
+            'address' => '123 Test Road', 'customer_note' => 'Careful',
+            'checkout_attempt_key' => 'web-checkout-key-0001'], $overrides);
     }
 
     private function apiPayload(array $overrides = []): array
@@ -110,7 +111,8 @@ class CheckoutTest extends TestCase
             'password' => 'password', 'status' => 'active']);
 
         $response = $this->actingAs($customer, 'web')->actingAs($admin, 'admin')->postJson('/api/orders',
-            $this->apiPayload(['subtotal' => 1, 'total' => 1, 'user_id' => 999, 'shipping_address' => ['city' => 'Sylhet']]));
+            $this->apiPayload(['subtotal' => 1, 'total' => 1, 'user_id' => 999, 'shipping_address' => ['city' => 'Sylhet']]),
+            ['Idempotency-Key' => 'api-checkout-key-0001']);
 
         $response->assertCreated()->assertJsonPath('user_id', $customer->id);
         $order = Order::firstOrFail();
@@ -163,7 +165,8 @@ class CheckoutTest extends TestCase
     {
         $customer = $this->user();
         $cart = $this->cartItem($customer, $this->product(), 0);
-        $this->actingAs($customer)->postJson('/api/orders', $this->apiPayload())->assertUnprocessable()->assertJsonValidationErrors('cart');
+        $this->actingAs($customer)->postJson('/api/orders', $this->apiPayload(), ['Idempotency-Key' => 'api-checkout-key-0002'])
+            ->assertUnprocessable()->assertJsonValidationErrors('cart');
         $this->assertDatabaseHas('cart_items', ['cart_id' => $cart->id, 'quantity' => 0]);
         $this->assertDatabaseCount('orders', 0);
     }
@@ -183,7 +186,8 @@ class CheckoutTest extends TestCase
             if (! Cart::where('user_id', $customer->id)->exists()) {
                 $this->cartItem($customer, $product, 1);
             }
-            $this->actingAs($customer)->postJson('/api/orders', $payload)->assertUnprocessable()->assertJsonValidationErrors($field);
+            $this->actingAs($customer)->postJson('/api/orders', $payload, ['Idempotency-Key' => 'api-checkout-key-0003'])
+                ->assertUnprocessable()->assertJsonValidationErrors($field);
         }
         $this->assertDatabaseCount('orders', 0);
     }
@@ -204,7 +208,7 @@ class CheckoutTest extends TestCase
 
         $this->withoutExceptionHandling();
         try {
-            $this->actingAs($customer)->postJson('/api/orders', $this->apiPayload());
+            $this->actingAs($customer)->postJson('/api/orders', $this->apiPayload(), ['Idempotency-Key' => 'api-checkout-key-0004']);
             $this->fail('Expected injected failure.');
         } catch (RuntimeException $exception) {
             $this->assertSame('Injected persistence failure', $exception->getMessage());
@@ -223,7 +227,8 @@ class CheckoutTest extends TestCase
         foreach ([1, 2] as $number) {
             $customer = $this->user(['email' => "buyer$number@example.test", 'phone' => "0170000000$number"]);
             $this->cartItem($customer, $this->product(['name' => "Lamp $number"]), 1);
-            $this->actingAs($customer, 'web')->postJson('/api/orders', $this->apiPayload())->assertCreated();
+            $this->actingAs($customer, 'web')->postJson('/api/orders', $this->apiPayload(),
+                ['Idempotency-Key' => 'api-checkout-key-'.$number])->assertCreated();
             $this->app['auth']->forgetGuards();
         }
         $this->assertCount(2, Order::pluck('order_number')->unique());
@@ -237,8 +242,9 @@ class CheckoutTest extends TestCase
         $this->cartItem($first, $product, 1);
         $secondCart = $this->cartItem($second, $product, 1);
 
-        $this->actingAs($first)->postJson('/api/orders', $this->apiPayload())->assertCreated();
-        $this->actingAs($second)->postJson('/api/orders', $this->apiPayload())->assertUnprocessable()->assertJsonValidationErrors('cart');
+        $this->actingAs($first)->postJson('/api/orders', $this->apiPayload(), ['Idempotency-Key' => 'api-checkout-key-first'])->assertCreated();
+        $this->actingAs($second)->postJson('/api/orders', $this->apiPayload(), ['Idempotency-Key' => 'api-checkout-key-second'])
+            ->assertUnprocessable()->assertJsonValidationErrors('cart');
         $this->assertSame(0, $product->fresh()->stock);
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseHas('cart_items', ['cart_id' => $secondCart->id, 'quantity' => 1]);

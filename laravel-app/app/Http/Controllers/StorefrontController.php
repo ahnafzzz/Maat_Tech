@@ -65,7 +65,16 @@ class StorefrontController extends Controller
             $quote = $this->checkoutService->preview($items, null);
         }
 
+        $attemptKey = old('checkout_attempt_key');
+        if (! is_string($attemptKey) || ! preg_match(CheckoutService::IDEMPOTENCY_KEY_PATTERN, $attemptKey)) {
+            $attemptKey = bin2hex(random_bytes(16));
+        }
+        if (! $request->user('web')) {
+            $this->guestCheckoutIdentity($request);
+        }
+
         return view('checkout', ['items' => $items, ...$quote, 'selectedDistrict' => $selectedDistrict,
+            'checkoutAttemptKey' => $attemptKey,
             'districts' => CheckoutService::DISTRICTS]);
     }
 
@@ -77,21 +86,42 @@ class StorefrontController extends Controller
             'district' => ['required', 'string', 'max:100'],
             'address' => ['required', 'string', 'max:2000'],
             'customer_note' => ['nullable', 'string', 'max:1000'],
+            'checkout_attempt_key' => ['required', 'string', 'max:128', 'regex:'.CheckoutService::IDEMPOTENCY_KEY_PATTERN],
         ]);
 
         $validated['district'] = $this->checkoutService->normalizeDistrict($validated['district']);
         $customer = $request->user('web');
-        $order = $this->checkoutService->checkout($customer, $customer ? [] : $request->session()->get('cart', []), $validated);
+        $guestCart = $customer ? [] : $request->session()->get('cart', []);
+        $guestIdentity = $customer ? null : $this->guestCheckoutIdentity($request);
+        $result = $this->checkoutService->checkout(
+            $customer,
+            $guestCart,
+            $validated,
+            $validated['checkout_attempt_key'],
+            $guestIdentity
+        );
+        $order = $result->order;
 
         $orderIds = $request->session()->get('order_ids', []);
         $orderIds[] = $order->id;
 
         $request->session()->put('order_ids', array_values(array_unique($orderIds)));
-        if (! $customer) {
+        if (! $customer && ! $result->replayed && $request->session()->get('cart', []) === $guestCart) {
             $request->session()->forget('cart');
         }
 
         return redirect()->route('orders.index')->with('status', 'Order placed successfully.');
+    }
+
+    private function guestCheckoutIdentity(Request $request): string
+    {
+        $identity = $request->session()->get('checkout_guest_identity');
+        if (! is_string($identity) || ! preg_match('/\A[a-f0-9]{64}\z/', $identity)) {
+            $identity = bin2hex(random_bytes(32));
+            $request->session()->put('checkout_guest_identity', $identity);
+        }
+
+        return $identity;
     }
 
     public function orders(Request $request): View

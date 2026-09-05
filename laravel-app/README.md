@@ -7,6 +7,16 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Checkout idempotency
+
+`POST /api/orders` requires an `Idempotency-Key` header containing 16–128 ASCII letters, numbers, dots, underscores, colons, or hyphens; the first character must be alphanumeric. Generate a new cryptographically random key for each intended purchase and retain it when retrying the same request.
+
+A retry by the same authenticated customer with the same normalized delivery, COD payment, and Pathao shipping details returns the original order with status `201` and the `Idempotent-Replayed: true` response header. Reusing the key with different checkout details returns `409`. Keys are scoped to the authenticated customer, so another customer cannot retrieve the order.
+
+Web checkout embeds the same kind of attempt key in the checkout form. Guest ownership uses a separate random identity held in the server-side session; only its SHA-256 hash is persisted. A guest who loses that session cannot recover the order through the attempt key. The database unique constraint serializes ownership of an attempt key, but SQLite tests do not prove concurrent behavior on the production database; verify overlapping same-key requests against the production database engine before release.
+
+To verify production-engine contention, provision a disposable database, migrate it, and create an authenticated customer with one cart item and known stock. Capture that session's cookie and CSRF header, then release two identical requests together, for example with `printf '1\n2\n' | xargs -P2 -I{} curl -sS -b checkout.cookies -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'X-XSRF-TOKEN: <token>' -H 'Idempotency-Key: <same-random-key>' --data @checkout.json <test-app-url>/api/orders`. Confirm both responses contain the same order ID, one scoped attempt row exists, one order and its expected items exist, and stock decreased once. Repeat with changed delivery details and confirm the second response is `409`. Never run this procedure against production data.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
@@ -75,4 +85,3 @@ Runtime targets for this profile:
 - `CACHE_STORE=file`
 - `QUEUE_CONNECTION=sync`
 - `APP_DEBUG=false`
-

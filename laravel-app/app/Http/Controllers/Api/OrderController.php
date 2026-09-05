@@ -20,6 +20,10 @@ class OrderController extends Controller
 
     public function store(Request $request)
     {
+        $attemptKey = Validator::make(['idempotency_key' => $request->header('Idempotency-Key')], [
+            'idempotency_key' => ['required', 'string', 'max:128', 'regex:'.CheckoutService::IDEMPOTENCY_KEY_PATTERN],
+        ])->validate()['idempotency_key'];
+
         $data = $request->validate([
             'payment_method' => ['required', 'in:cod'],
             'shipping_method' => ['required', 'in:pathao'],
@@ -54,14 +58,15 @@ class OrderController extends Controller
             'shipping_address.address' => ['required', 'string', 'max:2000'],
         ])->validate()['shipping_address'];
 
-        $order = $this->checkoutService->checkout($customer, [], [
+        $result = $this->checkoutService->checkout($customer, [], [
             'name' => $contact['name'],
             'phone' => $contact['phone'],
             'address' => $contact['address'],
             'district' => $district ?? $city,
             'customer_note' => $data['customer_note'] ?? null,
-        ]);
+        ], $attemptKey);
 
-        return response()->json($order->load('items.product'), 201);
+        return response()->json($result->order->load('items.product'), 201)
+            ->header('Idempotent-Replayed', $result->replayed ? 'true' : 'false');
     }
 }
