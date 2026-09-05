@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
+            'api.admin.auth' => \App\Http\Middleware\ApiAdminAuth::class,
             'ensure.order.owner' => \App\Http\Middleware\EnsureUserOwnsOrder::class,
         ]);
     })

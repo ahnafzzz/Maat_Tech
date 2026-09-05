@@ -94,10 +94,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
 Route::prefix('api')->name('api.')->group(function () {
     Route::get('/products', [ApiProductController::class, 'index']);
-    Route::post('/products', [ApiProductController::class, 'store']);
+    Route::post('/products', [ApiProductController::class, 'store'])->middleware('api.admin.auth');
     Route::get('/products/{id}', [ApiProductController::class, 'show']);
-    Route::put('/products/{id}', [ApiProductController::class, 'update']);
-    Route::delete('/products/{id}', [ApiProductController::class, 'destroy']);
+    Route::put('/products/{id}', [ApiProductController::class, 'update'])->middleware('api.admin.auth');
+    Route::delete('/products/{id}', [ApiProductController::class, 'destroy'])->middleware('api.admin.auth');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/cart', [ApiCartController::class, 'index']);

@@ -39,9 +39,10 @@ class CartController extends Controller
         return response()->json($cart->load('items.product'));
     }
 
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
-        CartItem::findOrFail($id)->delete();
+        CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $request->user('web')->id))
+            ->findOrFail($id)->delete();
 
         return response()->json(['message' => 'Item removed']);
     }
