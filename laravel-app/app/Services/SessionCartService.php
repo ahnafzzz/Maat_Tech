@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -58,14 +59,20 @@ class SessionCartService
     public function items(Request $request): Collection
     {
         if ($request->user()) {
-            return Cart::where('user_id', $request->user()->id)
-                ->with('items.product')
-                ->first()?->items
-                ->map(fn ($item) => [
-                    'product' => $item->product,
-                    'quantity' => $item->quantity,
-                    'line_total' => $item->product->final_price * $item->quantity,
-                ]) ?? collect();
+            return CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $request->user('web')->id))
+                ->with('product')
+                ->get()
+                ->groupBy('product_id')
+                ->map(function (Collection $items) {
+                    $quantity = $items->sum('quantity');
+                    $product = $items->first()->product;
+
+                    return [
+                        'product' => $product,
+                        'quantity' => $quantity,
+                        'line_total' => $product->final_price * $quantity,
+                    ];
+                })->values();
         }
 
         $cart = $request->session()->get('cart', []);

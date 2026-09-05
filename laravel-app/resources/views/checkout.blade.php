@@ -24,10 +24,9 @@
                 <label class="text-xs font-mono text-slate-400">PHONE_NUMBER<input name="phone" required value="{{ old('phone', auth()->user()?->phone) }}" class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500"></label>
                 <label class="text-xs font-mono text-slate-400">DISTRICT
                     <select id="checkout-district" name="district" required class="mt-2 w-full rounded-lg border border-cyber-border bg-[#090d14] p-3 text-sm text-white outline-none focus:border-tech-500">
-                        @php($districts = ['Dhaka','Chattogram','Khulna','Rajshahi','Sylhet','Barishal','Rangpur','Mymensingh'])
                         <option value="">Select district</option>
                         @foreach ($districts as $district)
-                            <option value="{{ $district }}" @selected(old('district', auth()->user()?->district) === $district)>{{ $district }}</option>
+                            <option value="{{ $district }}" @selected(old('district', $selectedDistrict) === $district)>{{ $district }}</option>
                         @endforeach
                     </select>
                 </label>
@@ -58,11 +57,11 @@
             </div>
             <div class="mt-5 space-y-2 text-sm text-slate-400">
                 <div class="flex justify-between"><span>Subtotal</span><span>BDT {{ number_format($subtotal) }}</span></div>
-                <div class="flex justify-between"><span>Shipping</span><span id="shipping-fee-label">BDT {{ number_format($shippingFee) }}</span></div>
+                <div class="flex justify-between"><span>Shipping</span><span id="shipping-fee-label">{{ $shippingFee === null ? 'Select district' : 'BDT '.number_format((float) $shippingFee, 2) }}</span></div>
                 <div class="flex justify-between"><span>Payment</span><span>Cash on Delivery</span></div>
             </div>
             <div class="mt-5 border-t border-cyber-border pt-4">
-                <div class="flex justify-between text-base font-semibold text-white"><span>Total</span><span id="checkout-total-label">BDT {{ number_format($subtotal + $shippingFee) }}</span></div>
+                <div class="flex justify-between text-base font-semibold text-white"><span>Total</span><span id="checkout-total-label">{{ $total === null ? 'Select district' : 'BDT '.number_format((float) $total, 2) }}</span></div>
             </div>
             <a href="https://wa.me/8801601934752?text={{ urlencode('I need checkout help with my MAAT TECHNOLOGIE BD order.') }}" target="_blank" rel="noreferrer" class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-xs font-mono text-emerald-300 hover:bg-emerald-900/50"><i data-lucide="message-circle" class="h-4 w-4"></i>NEED_HELP_ON_WHATSAPP</a>
         </aside>
@@ -76,16 +75,13 @@
         var districtField = document.getElementById('checkout-district');
         var shippingLabel = document.getElementById('shipping-fee-label');
         var totalLabel = document.getElementById('checkout-total-label');
-        var subtotal = {{ (int) $subtotal }};
+        var subtotal = {{ json_encode((float) $subtotal) }};
 
         function shippingForDistrict(value) {
             if (value === 'Dhaka') {
                 return 80;
             }
-            if (!value) {
-                return 120;
-            }
-            return 140;
+            return value ? 140 : null;
         }
 
         function formatMoney(value) {
@@ -97,8 +93,8 @@
                 return;
             }
             var shipping = shippingForDistrict(districtField.value);
-            shippingLabel.textContent = formatMoney(shipping);
-            totalLabel.textContent = formatMoney(subtotal + shipping);
+            shippingLabel.textContent = shipping === null ? 'Select district' : formatMoney(shipping);
+            totalLabel.textContent = shipping === null ? 'Select district' : formatMoney(subtotal + shipping);
         }
 
         if (districtField) {

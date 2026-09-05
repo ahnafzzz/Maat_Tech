@@ -3,61 +3,53 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Cart;
 use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Product;
+use App\Services\CheckoutService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
-    public function index()
+    public function __construct(private readonly CheckoutService $checkoutService) {}
+
+    public function index(Request $request)
     {
-        return Order::where('user_id', Auth::id())->latest()->get();
+        return Order::where('user_id', $request->user('web')->id)->latest()->get();
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'payment_method' => 'required|string',
-            'shipping_method' => 'required|string',
+            'payment_method' => ['required', 'in:cod'],
+            'shipping_method' => ['required', 'in:pathao'],
             'shipping_address' => 'required|array',
+            'shipping_address.name' => ['nullable', 'string', 'max:120'],
+            'shipping_address.phone' => ['nullable', 'string', 'max:30'],
+            'shipping_address.address' => ['required', 'string', 'max:2000'],
+            'shipping_address.district' => ['nullable', 'string', 'max:100'],
+            'shipping_address.city' => ['nullable', 'string', 'max:100'],
+            'customer_note' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $cart = Cart::where('user_id', Auth::id())->with('items.product')->latest()->first();
-        if (! $cart || $cart->items->isEmpty()) {
-            return response()->json(['message' => 'Cart is empty'], 422);
+        $districtInput = $data['shipping_address']['district'] ?? null;
+        $cityInput = $data['shipping_address']['city'] ?? null;
+        if ($districtInput === null && $cityInput === null) {
+            throw ValidationException::withMessages(['shipping_address.district' => 'A district or city is required.']);
+        }
+        $district = $districtInput === null ? null : $this->checkoutService->normalizeDistrict($districtInput, 'shipping_address.district');
+        $city = $cityInput === null ? null : $this->checkoutService->normalizeDistrict($cityInput, 'shipping_address.city');
+        if ($district && $city && $district !== $city) {
+            throw ValidationException::withMessages(['shipping_address.city' => 'City and district must identify the same district.']);
         }
 
-        $subtotal = $cart->items->sum(fn ($item) => $item->product->price * $item->quantity);
-        $shippingFee = $data['shipping_address']['city'] === 'Dhaka' ? 80 : 130;
-        $total = $subtotal + $shippingFee;
-
-        $order = Order::create([
-            'user_id' => Auth::id(),
-            'order_number' => 'MECH-' . now()->format('YmdHis'),
-            'status' => 'pending',
-            'payment_method' => $data['payment_method'],
-            'shipping_method' => $data['shipping_method'],
-            'subtotal' => $subtotal,
-            'shipping_fee' => $shippingFee,
-            'total' => $total,
-            'shipping_address' => $data['shipping_address'],
+        $customer = $request->user('web');
+        $order = $this->checkoutService->checkout($customer, [], [
+            'name' => $data['shipping_address']['name'] ?? $customer->name,
+            'phone' => $data['shipping_address']['phone'] ?? $customer->phone ?? '',
+            'address' => $data['shipping_address']['address'],
+            'district' => $district ?? $city,
+            'customer_note' => $data['customer_note'] ?? null,
         ]);
-
-        foreach ($cart->items as $item) {
-            OrderItem::create([
-                'order_id' => $order->id,
-                'product_id' => $item->product_id,
-                'quantity' => $item->quantity,
-                'unit_price' => $item->product->price,
-            ]);
-
-            $item->product->decrement('stock', $item->quantity);
-        }
-
-        $cart->items()->delete();
 
         return response()->json($order->load('items.product'), 201);
     }

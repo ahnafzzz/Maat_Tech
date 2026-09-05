@@ -11,6 +11,9 @@ class Order extends Model
     protected $casts = [
         'shipping_address' => 'array',
         'placed_at' => 'datetime',
+        'subtotal' => 'decimal:2',
+        'shipping_fee' => 'decimal:2',
+        'total' => 'decimal:2',
     ];
 
     public function items()
