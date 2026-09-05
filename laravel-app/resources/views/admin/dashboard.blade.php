@@ -66,7 +66,7 @@
                         </div>
                         <div class="mt-4 space-y-1 text-sm text-slate-400">
                             @foreach($order->items as $item)
-                                <div class="flex justify-between gap-3"><span>{{ $item->product->name ?? 'Removed product' }} × {{ $item->quantity }}</span><span>BDT {{ number_format($item->unit_price * $item->quantity) }}</span></div>
+                                <div class="flex justify-between gap-3"><span>{{ $item->product_name }} ({{ $item->product_sku }}) × {{ $item->quantity }}</span><span>BDT {{ number_format($item->unit_price * $item->quantity) }}</span></div>
                             @endforeach
                         </div>
                         <form method="POST" action="{{ route('admin.orders.update', $order) }}" class="mt-4 grid gap-3 lg:grid-cols-[1fr,1fr,auto]">

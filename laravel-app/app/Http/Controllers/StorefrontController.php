@@ -126,8 +126,9 @@ class StorefrontController extends Controller
 
     public function orders(Request $request): View
     {
-        $orders = Order::with('items.product')
-            ->when($request->user(), fn ($query) => $query->where('user_id', $request->user()->id), fn ($query) => $query->whereIn('id', $request->session()->get('order_ids', [])))
+        $customer = $request->user('web');
+        $orders = Order::with('items')
+            ->when($customer, fn ($query) => $query->where('user_id', $customer->id), fn ($query) => $query->whereIn('id', $request->session()->get('order_ids', [])))
             ->latest('placed_at')
             ->get();
 
@@ -163,7 +164,7 @@ class StorefrontController extends Controller
 
         return view('dashboard', [
             'user' => $user,
-            'orders' => $user->orders()->with('items.product')->latest('placed_at')->take(10)->get(),
+            'orders' => $user->orders()->with('items')->latest('placed_at')->take(10)->get(),
             'wishlistItems' => $this->wishlistItems($request),
             'cartItems' => $this->cartService->items($request),
         ]);

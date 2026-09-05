@@ -17,6 +17,14 @@ Web checkout embeds the same kind of attempt key in the checkout form. Guest own
 
 To verify production-engine contention, provision a disposable database, migrate it, and create an authenticated customer with one cart item and known stock. Capture that session's cookie and CSRF header, then release two identical requests together, for example with `printf '1\n2\n' | xargs -P2 -I{} curl -sS -b checkout.cookies -H 'Accept: application/json' -H 'Content-Type: application/json' -H 'X-XSRF-TOKEN: <token>' -H 'Idempotency-Key: <same-random-key>' --data @checkout.json <test-app-url>/api/orders`. Confirm both responses contain the same order ID, one scoped attempt row exists, one order and its expected items exist, and stock decreased once. Repeat with changed delivery details and confirm the second response is `409`. Never run this procedure against production data.
 
+## Historical order items
+
+Order API list, detail, and checkout responses expose `product_name` and `product_sku` on each item as the authoritative purchased-product identity; the live nested `product` object is no longer included. New orders snapshot these fields from the locked database product. The upgrade backfills legacy items from the currently available catalog, so those values are the best available identity and are not guaranteed to be the original purchase-time name. Missing catalog identities use `Unavailable product` and `SKU unavailable`.
+
+`GET /api/orders/{order}` requires the customer session and returns only an order whose `user_id` matches that explicit customer. Foreign, guest-owned, and missing orders return `404`; checkout-attempt keys and ownership metadata are not part of order responses.
+
+Customer and product foreign keys on historical orders use `null on delete`. The Step 4 migrations intentionally refuse automatic rollback: removing snapshots would discard history, and restoring the old cascade constraints may be invalid after referenced records have been deleted. Recovery requires a verified backup and a reviewed manual migration.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

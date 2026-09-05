@@ -15,7 +15,15 @@ class OrderController extends Controller
 
     public function index(Request $request)
     {
-        return Order::where('user_id', $request->user('web')->id)->latest()->get();
+        return Order::where('user_id', $request->user('web')->id)->with('items')->latest()->get();
+    }
+
+    public function show(Request $request, string $order)
+    {
+        return Order::whereKey($order)
+            ->where('user_id', $request->user('web')->id)
+            ->with('items')
+            ->firstOrFail();
     }
 
     public function store(Request $request)
@@ -66,7 +74,7 @@ class OrderController extends Controller
             'customer_note' => $data['customer_note'] ?? null,
         ], $attemptKey);
 
-        return response()->json($result->order->load('items.product'), 201)
+        return response()->json($result->order->load('items'), 201)
             ->header('Idempotent-Replayed', $result->replayed ? 'true' : 'false');
     }
 }

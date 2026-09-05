@@ -128,6 +128,8 @@ class CheckoutService
                     $subtotalMinor += $unitPriceMinor * $quantity;
                     $snapshot[] = [
                         'product_id' => $productId,
+                        'product_name' => $product->name,
+                        'product_sku' => $product->sku ?: 'SKU unavailable',
                         'quantity' => $quantity,
                         'unit_price' => $this->minorToDecimal($unitPriceMinor),
                     ];
@@ -232,7 +234,7 @@ class CheckoutService
             throw new \RuntimeException('The checkout attempt is not complete.');
         }
 
-        return new CheckoutResult($attempt->order()->with('items.product')->firstOrFail(), true);
+        return new CheckoutResult($attempt->order()->with('items')->firstOrFail(), true);
     }
 
     private function isAttemptUniquenessViolation(QueryException $exception): bool

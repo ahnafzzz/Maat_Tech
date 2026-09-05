@@ -1,9 +1,9 @@
 <?php
 
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Api\CartController as ApiCartController;
 use App\Http\Controllers\Api\OrderController as ApiOrderController;
 use App\Http\Controllers\Api\ProductController as ApiProductController;
-use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CustomerAuthController;
 use App\Http\Controllers\CustomerPasswordController;
 use App\Http\Controllers\HomeController;
@@ -106,6 +106,6 @@ Route::prefix('api')->name('api.')->group(function () {
 
         Route::get('/orders', [ApiOrderController::class, 'index']);
         Route::post('/orders', [ApiOrderController::class, 'store']);
-        Route::get('/orders/{order}', [ApiOrderController::class, 'show'])->middleware('ensure.order.owner');
+        Route::get('/orders/{order}', [ApiOrderController::class, 'show']);
     });
 });
