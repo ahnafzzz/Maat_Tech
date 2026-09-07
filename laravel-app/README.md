@@ -25,6 +25,28 @@ Order API list, detail, and checkout responses expose `product_name` and `produc
 
 Customer and product foreign keys on historical orders use `null on delete`. The Step 4 migrations intentionally refuse automatic rollback: removing snapshots would discard history, and restoring the old cascade constraints may be invalid after referenced records have been deleted. Recovery requires a verified backup and a reviewed manual migration.
 
+## Administrator bootstrap and credential remediation
+
+Ordinary `db:seed` execution creates catalog records only. It does not create customer or administrator accounts, including when Docker runs the seeder during startup.
+
+After migrations have completed, create the first lead administrator from a trusted application console:
+
+```bash
+php artisan admin:bootstrap --admin-id=ADM-1234-X --name="Lead Administrator" --email=operator@example.com
+```
+
+The command prompts twice for a hidden password, requires at least 12 characters with upper- and lowercase letters, a number, and a symbol, and refuses to run if a lead administrator or either supplied identity already exists. It uses a five-second bounded application lock and a retrying database transaction. The lock prevents concurrent bootstrap on hosts sharing the configured cache store. Deployments with multiple application nodes and non-shared cache stores must run this command with all but one node stopped because the current schema cannot enforce a single lead row across those nodes.
+
+To rotate exactly one existing administrator's password, first obtain and independently verify the intended administrator ID, then run:
+
+```bash
+php artisan admin:rotate-password ADM-1234-X
+```
+
+The command displays the matched ID, name, and email before prompting twice for the hidden password. It changes only the password and credential-revocation fields: pending two-factor codes are cleared, the remember token is rotated, and the administrator session version is rotated. Existing admin sessions are rejected on their next protected request regardless of the configured session backend; stored session records are not proactively deleted. Any request already executing when rotation commits cannot be recalled, so operators must also investigate logs and active work, rotate any other exposed secrets, and confirm the account's email, lead flag, status, and two-factor setting.
+
+Removing the seed code does not modify accounts already present in a deployed database. Existing deployments must migrate, identify every account created from historical defaults, rotate each affected administrator with the command above, reset or remove affected customer accounts through an authorized process, and verify no unknown accounts or changes remain. Do not rerun seeders expecting them to delete or repair existing accounts.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

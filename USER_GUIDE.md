@@ -71,5 +71,4 @@ This project is now a deployable static prototype for MECHARM. It includes:
 - For a full production rollout, the UI can later be connected to Laravel and the features listed above.
 
 
-Admin ID: ADM-0001-Z
-Password: ChangeMe!2026
+The static prototype does not authenticate administrators. Use the Laravel operator commands documented in `laravel-app/README.md` to bootstrap or remediate a real administrator account.

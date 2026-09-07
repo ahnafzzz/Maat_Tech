@@ -5,8 +5,6 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,92 +13,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             CategorySeeder::class,
             ProductSeeder::class,
-            AdminSeeder::class,
-            UserSeeder::class,
             OrderSeeder::class,
-        ]);
-    }
-}
-
-// database/seeders/AdminSeeder.php
-namespace Database\Seeders;
-
-use Illuminate\Database\Seeder;
-use App\Models\Admin;
-use Illuminate\Support\Facades\Hash;
-
-class AdminSeeder extends Seeder
-{
-    public function run(): void
-    {
-        // Lead Admin — has full authority
-        Admin::create([
-            'admin_id' => 'ADM-0001-Z',
-            'name' => 'System Lead',
-            'email' => 'lead@mechlum.dev',
-            'password' => Hash::make('LeadAccess2026!'),
-            'is_lead' => true,
-            'can_invite' => true,
-            'status' => 'active',
-        ]);
-
-        // Operator Admin — active, but must request to invite
-        Admin::create([
-            'admin_id' => 'ADM-0003-J',
-            'name' => 'Priya Desai',
-            'email' => 'p.desai@mechlum.dev',
-            'password' => Hash::make('OperatorPass99'),
-            'is_lead' => false,
-            'can_invite' => false,
-            'status' => 'active',
-        ]);
-
-        // Another Operator        Admin::create([
-            'admin_id' => 'ADM-0004-K',
-            'name' => 'Marcus Reid',
-            'email' => 'm.reid@mechlum.dev',
-            'password' => Hash::make('SecureAuth77'),
-            'is_lead' => false,
-            'can_invite' => false,
-            'status' => 'active',
-        ]);
-
-        // Inactive Admin (to test status blocking)
-        Admin::create([
-            'admin_id' => 'ADM-0002-Y',
-            'name' => 'Diana Ross',
-            'email' => 'd.ross@mechlum.dev',
-            'password' => Hash::make('InactiveOld22'),
-            'is_lead' => false,
-            'can_invite' => false,
-            'status' => 'inactive',
-        ]);
-    }
-}
-
-// database/seeders/UserSeeder.php
-namespace Database\Seeders;
-
-use Illuminate\Database\Seeder;
-use App\Models\User;
-use Illuminate\Support\Facades\Hash;
-
-class UserSeeder extends Seeder
-{
-    public function run(): void
-    {
-        User::create([
-            'name' => 'Alex Chen',
-            'email' => 'alex.chen@domain.net',
-            'password' => Hash::make('CustomerPass123'),
-            'email_verified_at' => now(),
-        ]);
-
-        User::create([
-            'name' => 'Jordan Blake',
-            'email' => 'j.blake@domain.net',
-            'password' => Hash::make('Password456'),
-            'email_verified_at' => now(),
         ]);
     }
 }

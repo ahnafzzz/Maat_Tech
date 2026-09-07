@@ -20,9 +20,10 @@ class Admin extends Authenticatable
         'two_factor_code',
         'two_factor_expires_at',
         'last_login_at',
+        'session_version',
     ];
 
-    protected $hidden = ['password', 'remember_token', 'two_factor_code'];
+    protected $hidden = ['password', 'remember_token', 'two_factor_code', 'session_version'];
 
     protected function casts(): array
     {

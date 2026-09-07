@@ -110,8 +110,6 @@
         var toggleButton = document.getElementById('toggle-passkey');
         var submitButton = document.getElementById('login-submit');
         var feedback = document.getElementById('login-feedback');
-        var expectedAdminId = 'ADM-0001-Z';
-        var expectedPassword = 'ChangeMe!2026';
 
         if (!form || !adminIdInput || !passwordInput || !toggleButton || !submitButton || !feedback) {
           return;
@@ -153,26 +151,7 @@
           adminIdInput.classList.remove('border-red-500', 'focus:border-red-400');
           adminIdInput.classList.add('focus:border-cyan-500');
 
-          var enteredAdminId = adminIdInput.value.trim();
-          var isValid = enteredAdminId === expectedAdminId && passwordInput.value === expectedPassword;
-
-          if (!isValid) {
-            adminIdInput.classList.add('border-red-500', 'focus:border-red-400');
-            adminIdInput.classList.remove('focus:border-cyan-500');
-            passwordInput.classList.add('border-red-500', 'focus:border-red-400');
-            passwordInput.classList.remove('focus:border-cyan-500');
-            showFeedback('Invalid admin ID or password. Please try again.', 'error');
-            return;
-          }
-
-          submitButton.disabled = true;
-          submitButton.textContent = 'Verifying...';
-          submitButton.classList.add('opacity-70', 'cursor-not-allowed');
-          showFeedback('Access granted. Redirecting to control panel...', 'success');
-
-          window.setTimeout(function () {
-            window.location.href = 'lead-admin-panel.html';
-          }, 700);
+          showFeedback('This static prototype does not authenticate accounts. Use the Laravel application for administrator access.', 'error');
         });
       })();
     </script>

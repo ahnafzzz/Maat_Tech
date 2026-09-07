@@ -5,18 +5,18 @@ namespace App\Http\Controllers;
 use App\Models\Admin;
 use App\Models\AdminInvitationRequest;
 use App\Models\Category;
-use App\Notifications\AdminTwoFactorCodeNotification;
 use App\Models\Order;
 use App\Models\Product;
+use App\Notifications\AdminTwoFactorCodeNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Throwable;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Throwable;
 
 class AdminController extends Controller
 {
@@ -57,9 +57,7 @@ class AdminController extends Controller
             return redirect()->route('admin.two-factor.challenge')->with('status', 'Verification code sent to your admin email.');
         }
 
-        Auth::guard('admin')->login($admin);
-        $request->session()->regenerate();
-        $admin->update(['last_login_at' => now()]);
+        $this->completeAuthentication($request, $admin);
 
         return redirect()->intended(route('admin.dashboard'));
     }
@@ -102,8 +100,7 @@ class AdminController extends Controller
         ])->save();
 
         $request->session()->forget('pending_admin_id');
-        Auth::guard('admin')->login($admin);
-        $request->session()->regenerate();
+        $this->completeAuthentication($request, $admin);
 
         return redirect()->intended(route('admin.dashboard'))->with('status', 'Two-factor verification complete.');
     }
@@ -151,8 +148,8 @@ class AdminController extends Controller
 
         $product = Product::create([
             ...collect($validated)->except(['images', 'video'])->all(),
-            'slug' => Str::slug($validated['name']) . '-' . Str::lower(Str::random(5)),
-            'sku' => 'ML-' . Str::upper(Str::random(8)),
+            'slug' => Str::slug($validated['name']).'-'.Str::lower(Str::random(5)),
+            'sku' => 'ML-'.Str::upper(Str::random(8)),
             'specs' => [],
             'images' => [],
         ]);
@@ -190,7 +187,7 @@ class AdminController extends Controller
 
         Category::create([
             'name' => $validated['name'],
-            'slug' => Str::slug($validated['name']) . '-' . Str::lower(Str::random(4)),
+            'slug' => Str::slug($validated['name']).'-'.Str::lower(Str::random(4)),
         ]);
 
         return back()->with('status', 'Category created.');
@@ -198,11 +195,11 @@ class AdminController extends Controller
 
     public function updateCategory(Request $request, Category $category): RedirectResponse
     {
-        $validated = $request->validate(['name' => ['required', 'string', 'max:120', 'unique:categories,name,' . $category->id]]);
+        $validated = $request->validate(['name' => ['required', 'string', 'max:120', 'unique:categories,name,'.$category->id]]);
 
         $category->update([
             'name' => $validated['name'],
-            'slug' => Str::slug($validated['name']) . '-' . Str::lower(Str::random(4)),
+            'slug' => Str::slug($validated['name']).'-'.Str::lower(Str::random(4)),
         ]);
 
         return back()->with('status', 'Category renamed.');
@@ -266,7 +263,7 @@ class AdminController extends Controller
             'reviewed_at' => now(),
         ]);
 
-        return back()->with('status', $admin->admin_id . ' approved. Set a password through the secure invite delivery hook.');
+        return back()->with('status', $admin->admin_id.' approved. Set a password through the secure invite delivery hook.');
     }
 
     public function rejectInvitation(Request $request, AdminInvitationRequest $requestItem): RedirectResponse
@@ -305,6 +302,18 @@ class AdminController extends Controller
             'remove_images.*' => ['string'],
             'remove_video' => ['nullable', 'boolean'],
         ]);
+    }
+
+    private function completeAuthentication(Request $request, Admin $admin): void
+    {
+        if (! $admin->session_version) {
+            $admin->forceFill(['session_version' => Str::random(64)])->save();
+        }
+
+        Auth::guard('admin')->login($admin);
+        $request->session()->regenerate();
+        $request->session()->put('admin_session_version', $admin->session_version);
+        $admin->update(['last_login_at' => now()]);
     }
 
     private function syncProductMedia(Request $request, Product $product): void

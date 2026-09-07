@@ -21,6 +21,17 @@ class AdminAuth
             return redirect()->route('admin.login')->withErrors(['admin_id' => 'Your administrator account is inactive.']);
         }
 
+        $admin = Auth::guard('admin')->user();
+        $sessionVersion = $request->session()->get('admin_session_version');
+
+        if (! is_string($sessionVersion) || ! is_string($admin->session_version) || ! hash_equals($admin->session_version, $sessionVersion)) {
+            Auth::guard('admin')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('admin.login')->withErrors(['admin_id' => 'Your administrator session has expired. Sign in again.']);
+        }
+
         return $next($request);
     }
 }
