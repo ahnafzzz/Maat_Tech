@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
 use App\Notifications\AdminTwoFactorCodeNotification;
+use App\Services\AdminSessionVersion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -20,6 +21,8 @@ use Throwable;
 
 class AdminController extends Controller
 {
+    public function __construct(private readonly AdminSessionVersion $sessionVersion) {}
+
     public function login(): View
     {
         return view('admin.login');
@@ -312,7 +315,7 @@ class AdminController extends Controller
 
         Auth::guard('admin')->login($admin);
         $request->session()->regenerate();
-        $request->session()->put('admin_session_version', $admin->session_version);
+        $this->sessionVersion->establish($request, $admin);
         $admin->update(['last_login_at' => now()]);
     }
 

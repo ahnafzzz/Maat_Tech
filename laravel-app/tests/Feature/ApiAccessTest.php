@@ -2,14 +2,21 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\RotateAdministratorPassword;
 use App\Models\Admin;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\AdminSessionVersion;
+use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Console\Tester\CommandTester;
 use Tests\TestCase;
 
 class ApiAccessTest extends TestCase
@@ -25,7 +32,7 @@ class ApiAccessTest extends TestCase
 
     private function admin(bool $active): Admin
     {
-        return Admin::create(['admin_id' => 'ADM-1234-A', 'name' => 'Admin', 'email' => 'admin@example.test', 'password' => 'test-password', 'status' => $active ? 'active' : 'inactive']);
+        return Admin::create(['admin_id' => 'ADM-1234-A', 'name' => 'Admin', 'email' => 'admin@example.test', 'password' => 'test-password', 'status' => $active ? 'active' : 'inactive', 'session_version' => Str::random(64)]);
     }
 
     private function authenticateAs(string $actor): void
@@ -34,7 +41,8 @@ class ApiAccessTest extends TestCase
             $this->actingAs(User::factory()->create(), 'web');
         }
         if (in_array($actor, ['active', 'inactive', 'both-active', 'both-inactive'])) {
-            $this->actingAs($this->admin(in_array($actor, ['active', 'both-active'])), 'admin');
+            $admin = $this->admin(in_array($actor, ['active', 'both-active']));
+            $this->actingAs($admin, 'admin')->withSession([AdminSessionVersion::SESSION_KEY => $admin->session_version]);
         }
     }
 
@@ -89,6 +97,121 @@ class ApiAccessTest extends TestCase
         $this->deleteJson('/api/products/'.$id)->assertOk();
         $this->assertDatabaseMissing('products', ['id' => $id]);
         $this->assertDatabaseHas('products', ['id' => $existing->id, 'name' => $existing->name]);
+    }
+
+    public static function staleAdminMutations(): array
+    {
+        return [['POST'], ['PUT'], ['DELETE']];
+    }
+
+    #[DataProvider('staleAdminMutations')]
+    public function test_password_rotation_rejects_old_admin_session_before_api_product_mutation(string $method): void
+    {
+        $product = $this->product();
+        $admin = $this->admin(true);
+        $oldPassword = 'Old-Api-Admin-42!';
+        $newPassword = 'New-Api-Admin-84!';
+        $admin->update(['password' => $oldPassword]);
+
+        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $oldPassword])
+            ->assertRedirect(route('admin.dashboard'));
+        $this->assertSame($admin->session_version, session(AdminSessionVersion::SESSION_KEY));
+
+        $this->rotatePassword($admin, $newPassword);
+        Auth::forgetGuards();
+
+        $before = Product::all()->toArray();
+        $payload = ['category_id' => $product->category_id, 'name' => 'Stale mutation', 'slug' => 'stale-mutation', 'price' => 250, 'stock' => 20];
+        $url = '/api/products'.($method === 'POST' ? '' : '/'.$product->id);
+
+        $this->app['env'] = 'session-revocation-verification';
+        try {
+            $this->withSession(['_token' => 'valid-revocation-test-token']);
+            $this->json($method, $url, $payload, ['X-CSRF-TOKEN' => 'valid-revocation-test-token'])
+                ->assertUnauthorized()
+                ->assertJson(['message' => 'Your administrator session has expired. Sign in again.']);
+        } finally {
+            $this->app['env'] = 'testing';
+        }
+
+        $this->assertSame($before, Product::all()->toArray());
+    }
+
+    public function test_fresh_login_after_rotation_restores_api_product_access(): void
+    {
+        $product = $this->product();
+        $admin = $this->admin(true);
+        $oldPassword = 'Old-Api-Admin-42!';
+        $newPassword = 'New-Api-Admin-84!';
+        $admin->update(['password' => $oldPassword]);
+
+        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $oldPassword])
+            ->assertRedirect(route('admin.dashboard'));
+        $this->rotatePassword($admin, $newPassword);
+        Auth::forgetGuards();
+
+        $this->app['env'] = 'session-revocation-verification';
+        try {
+            $this->withSession(['_token' => 'valid-revocation-test-token']);
+            $this->deleteJson('/api/products/'.$product->id, [], ['X-CSRF-TOKEN' => 'valid-revocation-test-token'])
+                ->assertUnauthorized();
+        } finally {
+            $this->app['env'] = 'testing';
+        }
+
+        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $newPassword])
+            ->assertRedirect(route('admin.dashboard'));
+
+        $payload = ['category_id' => $product->category_id, 'name' => 'Fresh mutation', 'slug' => 'fresh-mutation', 'price' => 250, 'stock' => 20];
+        $this->postJson('/api/products', $payload)->assertCreated();
+        $this->assertDatabaseHas('products', ['slug' => 'fresh-mutation']);
+    }
+
+    public function test_pre_rotation_remembered_admin_cookie_cannot_access_product_api(): void
+    {
+        $product = $this->product();
+        $admin = $this->admin(true);
+        $guard = Auth::guard('admin');
+        $guard->login($admin, true);
+        $recallerName = $guard->getRecallerName();
+        $recallerCookie = app('cookie')->queued($recallerName);
+        $this->assertNotNull($recallerCookie);
+
+        $this->rotatePassword($admin, 'New-Api-Admin-84!');
+        $this->flushSession();
+        Auth::forgetGuards();
+
+        $this->app['env'] = 'session-revocation-verification';
+        try {
+            $this->withSession(['_token' => 'valid-revocation-test-token']);
+            $this->withCookie($recallerName, $recallerCookie->getValue())
+                ->deleteJson('/api/products/'.$product->id, [], ['X-CSRF-TOKEN' => 'valid-revocation-test-token'])
+                ->assertUnauthorized();
+        } finally {
+            $this->app['env'] = 'testing';
+        }
+
+        $this->assertDatabaseHas('products', ['id' => $product->id]);
+    }
+
+    public function test_two_factor_completion_establishes_current_session_version_for_api_access(): void
+    {
+        $product = $this->product();
+        $admin = $this->admin(true);
+        $admin->forceFill([
+            'two_factor_enabled' => true,
+            'two_factor_code' => Hash::make('123456'),
+            'two_factor_expires_at' => now()->addMinutes(10),
+        ])->save();
+
+        $this->withSession(['pending_admin_id' => $admin->id])
+            ->post('/admin/two-factor', ['code' => '123456'])
+            ->assertRedirect(route('admin.dashboard'));
+        $this->assertSame($admin->session_version, session(AdminSessionVersion::SESSION_KEY));
+
+        $payload = ['category_id' => $product->category_id, 'name' => 'Two-factor mutation', 'slug' => 'two-factor-mutation', 'price' => 250, 'stock' => 20];
+        $this->postJson('/api/products', $payload)->assertCreated();
+        $this->assertDatabaseHas('products', ['slug' => 'two-factor-mutation']);
     }
 
     private function item(User $user, Product $product): CartItem
@@ -169,7 +292,10 @@ class ApiAccessTest extends TestCase
         $product = $this->product();
         $customer = User::factory()->create();
         $item = $this->item($customer, $product);
-        $this->actingAs($customer, 'web')->actingAs($this->admin(true), 'admin');
+        $admin = $this->admin(true);
+        $this->actingAs($customer, 'web')
+            ->actingAs($admin, 'admin')
+            ->withSession([AdminSessionVersion::SESSION_KEY => $admin->session_version]);
         $payload = ['category_id' => $product->category_id, 'name' => 'CSRF product', 'slug' => 'csrf-created', 'price' => 250, 'stock' => 20];
         $method = $operation === 'CART_DELETE' ? 'DELETE' : $operation;
         $url = $operation === 'CART_DELETE' ? '/api/cart/'.$item->id : '/api/products'.($method === 'POST' ? '' : '/'.$product->id);
@@ -193,5 +319,15 @@ class ApiAccessTest extends TestCase
         } finally {
             $this->app['env'] = 'testing';
         }
+    }
+
+    private function rotatePassword(Admin $admin, string $password): void
+    {
+        $command = $this->app->make(RotateAdministratorPassword::class);
+        $command->setLaravel($this->app);
+        $tester = new CommandTester($command);
+        $tester->setInputs([$password, $password]);
+
+        $this->assertSame(Command::SUCCESS, $tester->execute(['admin_id' => $admin->admin_id]));
     }
 }

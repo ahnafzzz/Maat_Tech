@@ -8,7 +8,9 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\AdminSessionVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class OrderHistoryTest extends TestCase
@@ -171,11 +173,14 @@ class OrderHistoryTest extends TestCase
             'email' => 'admin-history@example.test',
             'password' => 'password',
             'status' => 'active',
+            'session_version' => Str::random(64),
         ]);
 
         $this->getJson('/api/orders/'.$order->id)->assertUnauthorized();
         $this->actingAs($admin, 'admin')->getJson('/api/orders/'.$order->id)->assertUnauthorized();
-        $this->actingAs($customer, 'web')->deleteJson('/api/products/'.$product->id)->assertOk();
+        $this->actingAs($customer, 'web')
+            ->withSession([AdminSessionVersion::SESSION_KEY => $admin->session_version])
+            ->deleteJson('/api/products/'.$product->id)->assertOk();
         $this->getJson('/api/orders/'.$order->id)->assertOk()
             ->assertJsonPath('user_id', $customer->id)
             ->assertJsonPath('items.0.product_name', 'Historical Lamp')
