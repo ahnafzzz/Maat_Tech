@@ -23,7 +23,9 @@ The SSH workflow refuses to deploy unless these GitHub secrets are configured:
 - `DEPLOY_HEALTHCHECK_URL`, normally the HTTPS `/up` endpoint for the deployed application.
 - Absolute executable `DEPLOY_QUIESCE_HOOK` and `DEPLOY_RESUME_HOOK` paths. These must stop and restart every process that can write application data, including queue workers. `/bin/true` is acceptable only after confirming the environment has no asynchronous workers and uses `QUEUE_CONNECTION=sync`.
 
-The host must provide PHP 8.3 or newer with the application extensions, Composer, `rsync`, `flock`, `tar`, and `curl`. MySQL requires `mysqldump`; PostgreSQL requires `pg_dump` and `pg_restore`. The deploy user needs narrow write access to the application, backup location, and runtime directories. Do not grant recursive world-writable permissions.
+The host must provide a supported PHP 8.3 or newer release with the application extensions, Composer, `rsync`, `flock`, `tar`, and `curl`. Maintained asset builds use Node 24 LTS. MySQL requires `mysqldump`; PostgreSQL requires `pg_dump` and `pg_restore`. The deploy user needs narrow write access to the application, backup location, and runtime directories. Do not grant recursive world-writable permissions.
+
+The verified release matrix is PHP 8.3 and 8.4 with Composer 2.10, plus Node 24 LTS. As of September 2026, PHP 8.3 receives security fixes through December 2027 and PHP 8.4 through December 2028. Node 24 remains supported through April 2028; Node 20 reached end of life in April 2026 and is not a maintained deployment runtime. See the official [PHP supported versions](https://www.php.net/supported-versions.php) and [Node.js release schedule](https://github.com/nodejs/Release/blob/main/schedule.json).
 
 Production `.env` must already exist, be readable only by the application/deploy identity, retain a valid stable `APP_KEY`, use `APP_ENV=production`, disable debug mode, use an HTTPS `APP_URL`, and contain valid database configuration. For SQLite, `DB_DATABASE` must be an absolute persistent path outside the application tree. External MySQL/PostgreSQL databases are never copied as application files.
 
@@ -95,4 +97,6 @@ After recovery, run production preflight, verify `/up`, resume writers, inspect 
 - Configure backup capacity, encryption, retention, off-host copies, monitoring, and successful restore drills for the chosen engine.
 - Verify persistent Docker/cPanel volumes and storage links on the actual host.
 - Validate the deployment and migrations against a disposable instance of the production database engine.
-- Resolve dependency vulnerability findings in a separate checkpoint.
+- Continue automated Composer and npm advisory audits and review new findings before release.
+- Replace the container's `php artisan serve` development server with a reviewed production HTTP runtime and reverse-proxy/process model before treating that image as production-ready.
+- Restrict production trusted-proxy ranges to the actual reverse proxy or load balancer. The application currently trusts forwarding headers from every address in production, so the container must not be directly exposed to untrusted clients.

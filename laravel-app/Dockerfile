@@ -1,4 +1,4 @@
-FROM node:20-alpine AS frontend
+FROM node:24-alpine AS frontend
 
 WORKDIR /build
 COPY package.json package-lock.json vite.config.js ./
@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install pdo_pgsql pdo_mysql pdo_sqlite zip gd mbstring bcmath xml
 
 # Copy Composer from the official Docker image
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.10 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 COPY . .

@@ -4,7 +4,7 @@
 
 The maintained dependency locks are `laravel-app/composer.lock` for the Laravel runtime and test tooling, and `laravel-app/package-lock.json` for the Vite/Tailwind build. The root `package.json` contains repository helper scripts but no dependencies or lockfile. Netlify and the static/cPanel package do not add a separate package inventory.
 
-The audit host used PHP 8.5.10, Composer 2.10.3, Node 26.8.1, and npm 12.0.2. CI uses PHP 8.3 and Node 20; the runtime container uses PHP 8.4 and its frontend stage uses Node 20. Composer requires PHP 8.3 or newer. Compatibility must continue to be proven in CI and the container because the local versions are newer.
+The audit host used PHP 8.5.10, Composer 2.10.3, Node 26.8.1, and npm 12.0.2. Release verification covers PHP 8.3 and 8.4. CI and the container frontend use Node 24 LTS; the container runtime uses PHP 8.4. Composer requires PHP 8.3 or newer. Compatibility must continue to be proven in CI and the container because the local versions are newer.
 
 ## Composer findings and remediation
 
@@ -44,4 +44,4 @@ Official release notes: [PostCSS 8.5.23](https://github.com/postcss/postcss/rele
 
 Post-update Composer and npm audits completed successfully and reported no known advisories in their respective lockfiles, including development/build dependencies. This result is limited to advisories known to and returned by the configured audit services at the audit time. It is not proof that the dependencies or application are free of vulnerabilities.
 
-No advisory remains as a release blocker from these two audit results. Production readiness still depends on the hosting, backup/restore, and deployment blockers in `DEPLOYMENT_RUNBOOK.md`, plus successful CI verification on the configured PHP 8.3 and Node 20 environments.
+No advisory remains as a release blocker from these two audit results. Production readiness still depends on the hosting, backup/restore, and deployment blockers in `DEPLOYMENT_RUNBOOK.md`, plus successful CI verification on PHP 8.3, PHP 8.4, and Node 24 LTS.

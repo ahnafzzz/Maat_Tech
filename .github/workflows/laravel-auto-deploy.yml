@@ -30,12 +30,13 @@ jobs:
         with:
           php-version: "8.3"
           extensions: mbstring, bcmath, pdo_sqlite, sqlite3, intl, curl, xml, zip
+          tools: composer:2.10
           coverage: none
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: laravel-app/package-lock.json
 
@@ -72,12 +73,13 @@ jobs:
         with:
           php-version: "8.3"
           extensions: mbstring, bcmath, pdo_sqlite, sqlite3, intl, curl, xml, zip
+          tools: composer:2.10
           coverage: none
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: laravel-app/package-lock.json
 

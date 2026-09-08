@@ -1,0 +1,117 @@
+name: Release Verification
+
+on:
+  push:
+    branches: ["codex/production-hardening"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-verification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-syntax:
+    name: Workflow syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+
+  php-compatibility:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.3", "8.4"]
+    defaults:
+      run:
+        working-directory: laravel-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, bcmath, pdo_sqlite, sqlite3, intl, curl, xml, zip
+          tools: composer:2.10
+          coverage: none
+      - name: Install locked Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Validate Composer metadata and platform
+        run: |
+          composer validate --strict --no-check-publish
+          composer check-platform-reqs
+      - name: Confirm isolated database configuration
+        run: |
+          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php artisan config:show database
+          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php -r '$app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); exit(config("database.default") === "sqlite" && config("database.connections.sqlite.database") === ":memory:" ? 0 : 1);'
+      - name: Run isolated Laravel suite
+        run: |
+          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php artisan test
+
+  frontend:
+    name: Node 24 build and deployment fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup supported Node LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: laravel-app/package-lock.json
+      - name: Install locked frontend dependencies
+        working-directory: laravel-app
+        run: npm ci
+      - name: Build production frontend
+        working-directory: laravel-app
+        run: npm run build
+      - name: Verify Vite artifacts
+        run: |
+          test -s laravel-app/public/build/manifest.json
+          jq -e 'type == "object" and length > 0' laravel-app/public/build/manifest.json >/dev/null
+          find laravel-app/public/build/assets -type f -size +0c -print -quit | grep -q .
+      - name: Exercise deployment safety fixture
+        run: deployment/tests/deployment-safety-test.sh
+
+  dependency-audits:
+    name: Dependency advisory audits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:2.10
+          coverage: none
+      - name: Setup supported Node LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: laravel-app/package-lock.json
+      - name: Audit committed locks including development dependencies
+        run: deployment/verify-security-audits.sh
+
+  container:
+    name: Container build and persistent-state smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build image without publishing
+        run: docker build --tag "maat-tech-ci:${GITHUB_SHA}" laravel-app
+      - name: Smoke test explicit database setup and persistent volumes
+        run: deployment/tests/container-smoke-test.sh "maat-tech-ci:${GITHUB_SHA}"
