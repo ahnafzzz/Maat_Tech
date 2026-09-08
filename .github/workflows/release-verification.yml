@@ -64,7 +64,8 @@ jobs:
       - name: Create ephemeral testing key
         run: |
           test_key=$(openssl rand -base64 32)
-          printf 'APP_KEY=base64:%s\n' "$test_key" >> "$GITHUB_ENV"
+          umask 077
+          printf 'APP_KEY=base64:%s\n' "$test_key" > .env
       - name: Validate Composer metadata and platform
         run: |
           composer validate --strict --no-check-publish
