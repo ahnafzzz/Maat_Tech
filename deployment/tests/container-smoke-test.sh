@@ -133,7 +133,7 @@ start_container
 wait_for_health
 assert_persistence
 assert_http_surface
-docker top "$CONTAINER" -eo comm | grep -q apache2
+docker top "$CONTAINER" -eo pid,comm | grep -q apache2
 stop_container
 docker start "$CONTAINER" >/dev/null
 wait_for_health
