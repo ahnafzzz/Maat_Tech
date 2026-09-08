@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
@@ -23,6 +24,16 @@ class Product extends Model
     public function reviews()
     {
         return $this->hasMany(Review::class);
+    }
+
+    public function scopePublished(Builder $query): Builder
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function isPublished(): bool
+    {
+        return $this->status === 'active';
     }
 
     public function getFinalPriceAttribute(): float

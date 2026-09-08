@@ -20,6 +20,7 @@ class SessionCartService
             return;
         }
 
+        $product = Product::published()->findOrFail($product->getKey());
         $cart = $request->session()->get('cart', []);
         $cart[$product->id] = min($product->stock, ($cart[$product->id] ?? 0) + max(1, $quantity));
         $request->session()->put('cart', $cart);
@@ -33,14 +34,27 @@ class SessionCartService
             return;
         }
 
+        $product = Product::published()->findOrFail($product->getKey());
         $cart = $request->session()->get('cart', []);
+        $cart[$product->id] = min($product->stock, $quantity);
+        $request->session()->put('cart', $cart);
+    }
 
-        if ($quantity <= 0) {
-            unset($cart[$product->id]);
-        } else {
-            $cart[$product->id] = min($product->stock, $quantity);
+    public function remove(Request $request, int $productId): void
+    {
+        if ($customer = $request->user('web')) {
+            DB::transaction(function () use ($customer, $productId): void {
+                $cartIds = Cart::where('user_id', $customer->id)->orderBy('id')->lockForUpdate()->pluck('id');
+                $items = CartItem::whereIn('cart_id', $cartIds)->where('product_id', $productId)
+                    ->orderBy('id')->lockForUpdate()->get();
+                CartItem::whereIn('id', $items->pluck('id'))->delete();
+            }, 3);
+
+            return;
         }
 
+        $cart = $request->session()->get('cart', []);
+        unset($cart[$productId], $cart[(string) $productId]);
         $request->session()->put('cart', $cart);
     }
 
@@ -48,7 +62,7 @@ class SessionCartService
     {
         if ($customer = $request->user('web')) {
             return CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $customer->id))
-                ->with('product')
+                ->with(['product' => fn ($query) => $query->published()])
                 ->get()
                 ->groupBy('product_id')
                 ->map(function (Collection $items) {
@@ -56,24 +70,34 @@ class SessionCartService
                     $product = $items->first()->product;
 
                     return [
+                        'product_id' => (int) $items->first()->product_id,
                         'product' => $product,
+                        'available' => $product !== null,
                         'quantity' => $quantity,
-                        'line_total' => $product->final_price * $quantity,
+                        'line_total' => $product ? $product->final_price * $quantity : 0,
                     ];
                 })->values();
         }
 
         $cart = $request->session()->get('cart', []);
-        $products = Product::whereIn('id', array_keys($cart))->get()->keyBy('id');
+        $productIds = collect(array_keys($cart))->filter(fn ($id) => ctype_digit((string) $id))->map(fn ($id) => (int) $id);
+        $products = Product::published()->whereIn('id', $productIds)->get()->keyBy('id');
 
-        return collect($cart)->map(function (int $quantity, int|string $productId) use ($products) {
-            $product = $products->get((int) $productId);
+        return collect($cart)->map(function ($quantity, int|string $productId) use ($products) {
+            if (! ctype_digit((string) $productId) || ! is_int($quantity)) {
+                return null;
+            }
 
-            return $product ? [
+            $productId = (int) $productId;
+            $product = $products->get($productId);
+
+            return [
+                'product_id' => $productId,
                 'product' => $product,
+                'available' => $product !== null,
                 'quantity' => $quantity,
-                'line_total' => $product->final_price * $quantity,
-            ] : null;
+                'line_total' => $product ? $product->final_price * $quantity : 0,
+            ];
         })->filter()->values();
     }
 
@@ -105,6 +129,7 @@ class SessionCartService
     private function mutateCustomerProduct(User $customer, Product $product, callable $quantityResolver): void
     {
         DB::transaction(function () use ($customer, $product, $quantityResolver): void {
+            $lockedProduct = Product::published()->whereKey($product->id)->lockForUpdate()->firstOrFail();
             $carts = Cart::where('user_id', $customer->id)->orderBy('id')->lockForUpdate()->get();
             if ($carts->isEmpty()) {
                 $carts->push(Cart::create(['user_id' => $customer->id, 'session_id' => null]));
@@ -112,7 +137,6 @@ class SessionCartService
 
             $items = CartItem::whereIn('cart_id', $carts->pluck('id'))
                 ->where('product_id', $product->id)->orderBy('id')->lockForUpdate()->get();
-            $lockedProduct = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
             $quantity = $quantityResolver($items->sum('quantity'), $lockedProduct->stock);
 
             if ($quantity <= 0) {

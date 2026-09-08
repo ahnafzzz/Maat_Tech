@@ -18,7 +18,14 @@ class CartController extends Controller
         $customer = $request->user('web');
         $cart = Cart::firstOrCreate(['user_id' => $customer->id], ['session_id' => null]);
         $items = CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $customer->id))
-            ->with('product')->orderBy('id')->get();
+            ->with(['product' => fn ($query) => $query->published()])->orderBy('id')->get()
+            ->map(fn (CartItem $item) => [
+                'id' => $item->id,
+                'product_id' => $item->product_id,
+                'quantity' => $item->quantity,
+                'available' => $item->product !== null,
+                'product' => $item->product,
+            ]);
 
         return response()->json([...$cart->toArray(), 'items' => $items]);
     }
@@ -26,12 +33,12 @@ class CartController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'product_id' => 'required|exists:products,id',
+            'product_id' => 'required|integer',
             'quantity' => 'required|integer|min:1',
         ]);
 
         $customer = $request->user('web');
-        $product = Product::findOrFail($data['product_id']);
+        $product = Product::published()->findOrFail($data['product_id']);
         $this->cartService->addForCustomer($customer, $product, $data['quantity']);
 
         return $this->index($request);

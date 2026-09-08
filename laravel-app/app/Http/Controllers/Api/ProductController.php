@@ -10,7 +10,7 @@ class ProductController extends Controller
 {
     public function index()
     {
-        return Product::with('category')->latest()->get();
+        return Product::published()->with('category')->latest()->get();
     }
 
     public function store(Request $request)
@@ -30,7 +30,7 @@ class ProductController extends Controller
 
     public function show(string $id)
     {
-        return Product::with('category')->findOrFail($id);
+        return Product::published()->with('category')->findOrFail($id);
     }
 
     public function update(Request $request, string $id)

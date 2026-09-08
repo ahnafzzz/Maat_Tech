@@ -54,9 +54,9 @@
                     <div class="mt-4 space-y-3">
                         @forelse ($product->reviews as $review)
                             <div class="border-b border-cyber-border pb-3 last:border-b-0 last:pb-0">
-                                <p class="text-sm font-semibold text-white">{{ $review->author_name ?? 'Verified buyer' }}</p>
+                                <p class="text-sm font-semibold text-white">{{ $review->title }}</p>
                                 <p class="mt-1 text-xs text-tech-300">Rating: {{ $review->rating }}/5</p>
-                                <p class="mt-2 text-sm text-slate-400">{{ $review->comment }}</p>
+                                <p class="mt-2 text-sm text-slate-400">{{ $review->body }}</p>
                             </div>
                         @empty
                             <p class="text-sm text-slate-500">Customer reviews will appear here once verified orders begin submitting feedback.</p>

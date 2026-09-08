@@ -12,4 +12,9 @@ class WishlistItem extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function wishlist()
+    {
+        return $this->belongsTo(Wishlist::class);
+    }
 }

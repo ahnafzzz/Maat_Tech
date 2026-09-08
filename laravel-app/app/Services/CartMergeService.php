@@ -15,13 +15,18 @@ class CartMergeService
     public function merge(Request $request, User $user): void
     {
         foreach ($request->session()->get('cart', []) as $productId => $quantity) {
-            $this->cartService->addForCustomer($user, Product::findOrFail($productId), $quantity);
+            $product = Product::published()->find($productId);
+            if ($product) {
+                $this->cartService->addForCustomer($user, $product, $quantity);
+            }
         }
 
         $wishlist = Wishlist::firstOrCreate(['user_id' => $user->id], ['session_id' => null]);
 
         foreach ($request->session()->get('wishlist', []) as $productId) {
-            WishlistItem::firstOrCreate(['wishlist_id' => $wishlist->id, 'product_id' => $productId]);
+            if (Product::published()->whereKey($productId)->exists()) {
+                WishlistItem::firstOrCreate(['wishlist_id' => $wishlist->id, 'product_id' => $productId]);
+            }
         }
 
         $request->session()->forget(['cart', 'wishlist']);

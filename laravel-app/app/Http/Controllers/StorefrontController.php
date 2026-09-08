@@ -28,25 +28,38 @@ class StorefrontController extends Controller
         ]);
     }
 
-    public function addToCart(Request $request, Product $product): RedirectResponse
+    public function addToCart(Request $request, string $product): RedirectResponse
     {
+        $product = Product::published()->findOrFail($product);
         $this->cartService->add($request, $product, (int) $request->input('quantity', 1));
 
         return back()->with('status', $product->name.' added to cart.');
     }
 
-    public function updateCart(Request $request, Product $product): RedirectResponse
+    public function updateCart(Request $request, string $product): RedirectResponse
     {
-        $this->cartService->update($request, $product, (int) $request->input('quantity', 1));
+        $quantity = (int) $request->input('quantity', 1);
+        if ($quantity <= 0) {
+            $this->cartService->remove($request, (int) $product);
+        } else {
+            $this->cartService->update($request, Product::published()->findOrFail($product), $quantity);
+        }
 
         return back()->with('status', 'Cart updated.');
     }
 
-    public function removeFromCart(Request $request, Product $product): RedirectResponse
+    public function removeFromCart(Request $request, string $product): RedirectResponse
     {
-        $this->cartService->update($request, $product, 0);
+        $this->cartService->remove($request, (int) $product);
 
-        return back()->with('status', $product->name.' removed from cart.');
+        return back()->with('status', 'Item removed from cart.');
+    }
+
+    public function clearCart(Request $request): RedirectResponse
+    {
+        $this->cartService->clear($request);
+
+        return back()->with('status', 'Cart cleared.');
     }
 
     public function checkout(Request $request): View|RedirectResponse
@@ -55,6 +68,10 @@ class StorefrontController extends Controller
 
         if ($items->isEmpty()) {
             return back()->with('status', 'Your cart is empty.');
+        }
+
+        if ($items->contains(fn (array $item) => ! $item['available'])) {
+            return redirect()->route('cart.index')->withErrors(['cart' => 'Remove unavailable items before checkout.']);
         }
 
         $selectedDistrict = $request->user('web')?->district;
@@ -142,20 +159,37 @@ class StorefrontController extends Controller
         return view('wishlist', compact('items'));
     }
 
-    public function toggleWishlist(Request $request, Product $product): RedirectResponse
+    public function toggleWishlist(Request $request, string $product): RedirectResponse
     {
-        if ($request->user()) {
-            $wishlist = Wishlist::firstOrCreate(['user_id' => $request->user()->id], ['session_id' => null]);
-            $item = WishlistItem::where(['wishlist_id' => $wishlist->id, 'product_id' => $product->id])->first();
+        $productId = (int) $product;
 
-            $item ? $item->delete() : WishlistItem::create(['wishlist_id' => $wishlist->id, 'product_id' => $product->id]);
+        if ($request->user()) {
+            $wishlist = Wishlist::where('user_id', $request->user()->id)->first();
+            $item = $wishlist ? WishlistItem::where(['wishlist_id' => $wishlist->id, 'product_id' => $productId])->first() : null;
+
+            if ($item) {
+                $item->delete();
+
+                return back()->with('status', 'Item removed from wishlist.');
+            }
+
+            $publishedProduct = Product::published()->findOrFail($productId);
+            $wishlist ??= Wishlist::firstOrCreate(['user_id' => $request->user()->id], ['session_id' => null]);
+            WishlistItem::firstOrCreate(['wishlist_id' => $wishlist->id, 'product_id' => $publishedProduct->id]);
         } else {
             $wishlist = $request->session()->get('wishlist', []);
-            $wishlist = in_array($product->id, $wishlist) ? array_values(array_diff($wishlist, [$product->id])) : [...$wishlist, $product->id];
+            if (in_array($productId, $wishlist)) {
+                $request->session()->put('wishlist', array_values(array_diff($wishlist, [$productId])));
+
+                return back()->with('status', 'Item removed from wishlist.');
+            }
+
+            $publishedProduct = Product::published()->findOrFail($productId);
+            $wishlist = [...$wishlist, $publishedProduct->id];
             $request->session()->put('wishlist', $wishlist);
         }
 
-        return back()->with('status', $product->name.' wishlist updated.');
+        return back()->with('status', $publishedProduct->name.' added to wishlist.');
     }
 
     public function dashboard(Request $request): View
@@ -173,9 +207,26 @@ class StorefrontController extends Controller
     private function wishlistItems(Request $request)
     {
         if ($request->user()) {
-            return Wishlist::where('user_id', $request->user()->id)->with('items.product')->first()?->items ?? collect();
+            return WishlistItem::whereHas('wishlist', fn ($query) => $query->where('user_id', $request->user()->id))
+                ->with(['product' => fn ($query) => $query->published()])
+                ->get()
+                ->map(fn (WishlistItem $item) => [
+                    'product_id' => (int) $item->product_id,
+                    'product' => $item->product,
+                    'available' => $item->product !== null,
+                ]);
         }
 
-        return Product::whereIn('id', $request->session()->get('wishlist', []))->get();
+        $wishlist = collect($request->session()->get('wishlist', []))
+            ->filter(fn ($id) => ctype_digit((string) $id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()->values();
+        $products = Product::published()->whereIn('id', $wishlist)->get()->keyBy('id');
+
+        return $wishlist->map(fn (int $productId) => [
+            'product_id' => $productId,
+            'product' => $products->get($productId),
+            'available' => $products->has($productId),
+        ]);
     }
 }

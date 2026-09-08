@@ -10,23 +10,24 @@ class HomeController extends Controller
 {
     public function index()
     {
-        $featuredProducts = Product::where('is_featured', true)->take(3)->get();
-        $categories = Category::withCount('products')->orderBy('name')->take(4)->get();
+        $featuredProducts = Product::published()->where('is_featured', true)->take(3)->get();
+        $categories = Category::withCount(['products' => fn ($query) => $query->published()])
+            ->orderBy('name')->take(4)->get();
 
         return view('home', compact('categories', 'featuredProducts'));
     }
 
     public function products(Request $request)
     {
-        $query = Product::with('category')->where('status', 'active');
+        $query = Product::published()->with('category');
 
         if ($request->filled('q')) {
             $search = trim((string) $request->input('q'));
             $query->where(function ($builder) use ($search) {
                 $builder
-                    ->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('description', 'like', '%' . $search . '%')
-                    ->orWhere('sku', 'like', '%' . $search . '%');
+                    ->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('description', 'like', '%'.$search.'%')
+                    ->orWhere('sku', 'like', '%'.$search.'%');
             });
         }
 
@@ -48,17 +49,21 @@ class HomeController extends Controller
         };
 
         $products = $query->paginate(12)->withQueryString();
-        $categories = Category::withCount('products')->orderBy('name')->get();
+        $categories = Category::withCount(['products' => fn ($query) => $query->published()])
+            ->orderBy('name')->get();
 
         return view('products', compact('products', 'categories'));
     }
 
     public function show(string $slug)
     {
-        $product = Product::with(['category', 'reviews'])->where('slug', $slug)->firstOrFail();
+        $product = Product::published()
+            ->with(['category', 'reviews' => fn ($query) => $query->approved()->latest()])
+            ->where('slug', $slug)
+            ->firstOrFail();
 
-        $relatedProducts = Product::with('category')
-            ->where('status', 'active')
+        $relatedProducts = Product::published()
+            ->with('category')
             ->where('id', '!=', $product->id)
             ->where('category_id', $product->category_id)
             ->take(3)

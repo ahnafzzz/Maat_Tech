@@ -119,7 +119,7 @@ class CheckoutService
                     $product = $products->get($productId);
                     $quantity = $quantities[$productId];
                     if ($product->status !== 'active') {
-                        throw ValidationException::withMessages(['cart' => "$product->name is not currently available."]);
+                        throw ValidationException::withMessages(['cart' => 'A product in your cart is no longer available.']);
                     }
                     if ($product->stock < $quantity) {
                         throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);

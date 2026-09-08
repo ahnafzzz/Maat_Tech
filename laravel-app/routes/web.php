@@ -34,7 +34,7 @@ Route::get('/sitemap.xml', function () {
         route('privacy'),
         route('terms'),
         route('refund'),
-    ])->merge(Product::where('status', 'active')->pluck('slug')->map(fn (string $slug) => route('products.show', $slug)));
+    ])->merge(Product::published()->pluck('slug')->map(fn (string $slug) => route('products.show', $slug)));
 
     $xml = view('sitemap', ['urls' => $urls])->render();
 
@@ -42,15 +42,16 @@ Route::get('/sitemap.xml', function () {
 })->name('sitemap');
 
 Route::get('/cart', [StorefrontController::class, 'cart'])->name('cart.index');
-Route::post('/cart/add/{product}', [StorefrontController::class, 'addToCart'])->name('cart.add');
-Route::post('/cart/update/{product}', [StorefrontController::class, 'updateCart'])->name('cart.update');
-Route::post('/cart/remove/{product}', [StorefrontController::class, 'removeFromCart'])->name('cart.remove');
+Route::post('/cart/add/{product}', [StorefrontController::class, 'addToCart'])->whereNumber('product')->name('cart.add');
+Route::post('/cart/update/{product}', [StorefrontController::class, 'updateCart'])->whereNumber('product')->name('cart.update');
+Route::post('/cart/remove/{product}', [StorefrontController::class, 'removeFromCart'])->whereNumber('product')->name('cart.remove');
+Route::post('/cart/clear', [StorefrontController::class, 'clearCart'])->name('cart.clear');
 Route::get('/checkout', [StorefrontController::class, 'checkout'])->name('checkout');
 Route::post('/checkout', [StorefrontController::class, 'placeOrder'])->middleware('throttle:checkout')->name('checkout.place');
 
 Route::get('/orders', [StorefrontController::class, 'orders'])->name('orders.index');
 Route::get('/wishlist', [StorefrontController::class, 'wishlist'])->name('wishlist.index');
-Route::post('/wishlist/{product}', [StorefrontController::class, 'toggleWishlist'])->name('wishlist.toggle');
+Route::post('/wishlist/{product}', [StorefrontController::class, 'toggleWishlist'])->whereNumber('product')->name('wishlist.toggle');
 
 Route::middleware('guest')->group(function () {
     Route::get('/register', [CustomerAuthController::class, 'create'])->name('register');
