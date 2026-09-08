@@ -16,6 +16,7 @@ class DeploymentEntrypointTest extends TestCase
         $this->assertStringContainsString('FROM php:8.4-apache', $dockerfile);
         $this->assertStringContainsString('exec apache2-foreground', $startup);
         $this->assertStringContainsString('DocumentRoot /app/public', $virtualHost);
+        $this->assertStringContainsString('<LocationMatch "(?i)^/storage/', $virtualHost);
         $this->assertStringContainsString('deployment:preflight', $startup);
         $this->assertStringNotContainsString('artisan serve', $dockerfile.$startup);
         $this->assertStringNotContainsString('key:generate', $dockerfile.$startup);
