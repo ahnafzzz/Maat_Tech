@@ -43,15 +43,7 @@ This checklist is for the Laravel app at laravel-app/.
    - MAIL_* SMTP credentials
 5. Enable database and Redis services.
 6. Enable SSL from Forge (Let's Encrypt).
-7. Add deployment script:
-   - git pull
-   - composer install --no-dev --prefer-dist --optimize-autoloader
-   - npm ci
-   - npm run build
-   - php artisan migrate --force
-   - php artisan config:cache
-   - php artisan route:cache
-   - php artisan view:cache
+7. Configure the repository's `deployment/deploy-laravel.sh` with the required backup location, health URL, and writer quiesce/resume hooks. Do not use an unguarded pull-and-migrate script. See [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md).
 8. Configure queue worker in Forge daemon manager.
 9. Configure scheduler (Forge scheduler or cron every minute).
 10. Run first deployment and smoke test.
@@ -69,18 +61,12 @@ This checklist is for the Laravel app at laravel-app/.
    - composer
    - nodejs npm
 5. Clone repo to /var/www/maat-tech.
-6. Create laravel-app/.env from .env.example and fill production values.
+6. For first installation only, create `laravel-app/.env` from `.env.example`, fill production values, and generate `APP_KEY` once. Routine deployments must preserve both.
 7. Install app dependencies:
    - cd /var/www/maat-tech/laravel-app
    - composer install --no-dev --prefer-dist --optimize-autoloader
    - npm ci && npm run build
-8. Initialize app:
-   - php artisan key:generate
-   - php artisan migrate --force
-   - php artisan storage:link
-   - php artisan config:cache
-   - php artisan route:cache
-   - php artisan view:cache
+8. Complete the separately documented first-install initialization, then use [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) for routine backup-gated deployments and recovery.
 9. Set ownership/permissions:
    - chown -R www-data:www-data storage bootstrap/cache
 10. Add Nginx vhost from deployment/nginx/maattech.com.conf.
@@ -101,6 +87,11 @@ This checklist is for the Laravel app at laravel-app/.
    - DEPLOY_USER
    - DEPLOY_SSH_PRIVATE_KEY
    - DEPLOY_PATH (example: /var/www/maat-tech)
+   - DEPLOY_KNOWN_HOSTS (independently verified host key)
+   - DEPLOY_BACKUP_PATH
+   - DEPLOY_HEALTHCHECK_URL
+   - DEPLOY_QUIESCE_HOOK
+   - DEPLOY_RESUME_HOOK
 2. Ensure deploy user has write access to DEPLOY_PATH.
 3. Add deploy user SSH public key to server ~/.ssh/authorized_keys.
 4. Confirm server has git, composer, npm, php, and required PHP extensions.

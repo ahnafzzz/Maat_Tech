@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$ROOT_DIR/laravel-app"
 
-echo "[1/7] Checking Laravel app directory..."
+echo "[1/5] Checking Laravel app directory..."
 if [ ! -d "$APP_DIR" ]; then
   echo "laravel-app directory not found."
   exit 1
@@ -13,30 +13,18 @@ fi
 
 cd "$APP_DIR"
 
-echo "[2/7] Installing production PHP dependencies only..."
-composer install --no-dev --prefer-dist --classmap-authoritative --optimize-autoloader
+echo "[2/5] Installing production PHP dependencies only..."
+composer install --no-dev --prefer-dist --classmap-authoritative --optimize-autoloader --no-interaction
+composer check-platform-reqs --no-dev
 
-echo "[3/7] Preparing low-resource environment file (if missing)..."
-if [ ! -f .env ]; then
-  cp .env.low-resource.example .env
-  echo "Created .env from .env.low-resource.example"
-fi
+echo "[3/5] Installing frontend dependencies..."
+npm ci
 
-echo "[4/7] Generating app key if missing..."
-php artisan key:generate --force
+echo "[4/5] Building frontend assets..."
+npm run build
+test -f public/build/manifest.json
 
-echo "[5/7] Running migrations..."
-php artisan migrate --force
-
-echo "[6/7] Caching framework metadata for faster requests..."
-php artisan optimize:clear
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-
-echo "[7/7] Final reminders"
+echo "[5/5] Package preparation complete"
 echo "- Ensure document root points to laravel-app/public"
-echo "- Keep QUEUE_CONNECTION=sync for 1GB shared hosting"
-echo "- Keep CACHE_STORE=file and SESSION_DRIVER=file"
-
-echo "Low-resource deployment prep complete."
+echo "- This command does not create .env, generate APP_KEY, seed, or migrate"
+echo "- Follow deployment/DEPLOYMENT_RUNBOOK.md for first installation or routine deployment"

@@ -27,7 +27,7 @@ Customer and product foreign keys on historical orders use `null on delete`. The
 
 ## Administrator bootstrap and credential remediation
 
-Ordinary `db:seed` execution creates catalog records only. It does not create customer or administrator accounts, including when Docker runs the seeder during startup.
+Ordinary `db:seed` execution creates catalog records only. It does not create customer or administrator accounts. Deployment and container startup do not run seeders automatically; catalog seeding is an explicit operator action.
 
 After migrations have completed, create the first lead administrator from a trusted application console:
 

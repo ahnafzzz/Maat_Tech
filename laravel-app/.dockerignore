@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+!.env.low-resource.example
+database/*.sqlite*
+node_modules
+storage/app/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
+tests

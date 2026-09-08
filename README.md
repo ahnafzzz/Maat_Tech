@@ -41,9 +41,10 @@ If you deploy Laravel on small shared hosting, use:
 npm run laravel:low-resource
 ```
 
-Then follow:
+This prepares dependencies and frontend assets only; it does not alter `.env`, generate `APP_KEY`, migrate, or seed. Then follow:
 - [deployment/LOW_RESOURCE_HOSTING_1GB.md](deployment/LOW_RESOURCE_HOSTING_1GB.md)
 - [deployment/CPANEL_PREP_CHECKLIST.md](deployment/CPANEL_PREP_CHECKLIST.md)
+- [deployment/DEPLOYMENT_RUNBOOK.md](deployment/DEPLOYMENT_RUNBOOK.md)
 
 ## Deploy to static hosts
 This project is compatible with:

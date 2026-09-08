@@ -38,7 +38,7 @@ Why these values:
 - reduces DB writes from sessions + cache tables
 - lowers memory and CPU pressure
 
-## 3) Deployment command (light profile)
+## 3) Package preparation (light profile)
 
 From project root:
 
@@ -46,13 +46,14 @@ From project root:
 npm run laravel:low-resource
 ```
 
-This command:
+Run this in a disposable build workspace, not over the live application. This command:
 
 1. Installs PHP dependencies without dev packages.
-2. Creates `.env` from low-resource template if missing.
-3. Generates key.
-4. Runs migrations.
-5. Builds Laravel caches (`config`, `route`, `view`).
+2. Checks PHP platform requirements.
+3. Installs frontend dependencies and builds production assets.
+4. Does not create or modify `.env`, generate `APP_KEY`, migrate, or seed.
+
+Use [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) for first installation, persistent paths, required backups, routine deployment, and recovery. On a host without SSH, `flock`, `rsync`, database backup tools, and executable writer-control hooks, deployment remains a manual maintenance operation and is not covered by the automated path.
 
 ## 4) cPanel/LiteSpeed settings checklist
 
@@ -61,6 +62,7 @@ This command:
 3. Set PHP memory limit to at least 256M in cPanel if possible.
 4. Keep opcache enabled (if host exposes this setting).
 5. Disable debug tools in production.
+6. Keep `.env`, `storage`, uploads, and any SQLite database outside the replaced application payload.
 
 ## 5) Storage and bandwidth discipline
 

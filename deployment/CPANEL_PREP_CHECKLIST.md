@@ -39,14 +39,7 @@ Use this only if your cPanel hosting supports PHP 8.3+ and Composer.
    - `APP_DEBUG=false`
    - `APP_URL=https://your-domain.com`
    - production `DB_*` values
-6. Install dependencies and optimize:
-   - `composer install --no-dev --optimize-autoloader`
-   - `php artisan key:generate`
-   - `php artisan migrate --force`
-   - `php artisan storage:link`
-   - `php artisan config:cache`
-   - `php artisan route:cache`
-   - `php artisan view:cache`
+6. Follow [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md). Generate `APP_KEY` only during a separately reviewed first installation. Routine deployments require a verified database backup and must preserve `.env`, `storage`, uploads, and SQLite files and sidecars.
 7. Ensure write permissions for `storage/` and `bootstrap/cache/`.
 8. Enable SSL and force HTTPS.
 
@@ -56,7 +49,7 @@ If your hosting plan is low-resource shared hosting, use this profile:
 
 1. Copy `laravel-app/.env.low-resource.example` to `laravel-app/.env`.
 2. Set real DB and mail credentials.
-3. Run from project root:
+3. Prepare an upload artifact in a disposable local build workspace:
    - `npm run laravel:low-resource`
 4. Keep these settings:
    - `QUEUE_CONNECTION=sync`
@@ -65,7 +58,7 @@ If your hosting plan is low-resource shared hosting, use this profile:
    - `APP_DEBUG=false`
 5. Do not run `npm ci` / `npm run build` on the server.
    Build assets beforehand (local/CI) and upload generated files only.
-6. Follow [deployment/LOW_RESOURCE_HOSTING_1GB.md](deployment/LOW_RESOURCE_HOSTING_1GB.md).
+6. Follow [LOW_RESOURCE_HOSTING_1GB.md](LOW_RESOURCE_HOSTING_1GB.md) and [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md). Do not extract an archive over persistent files unless the host can honor the documented exclusions and backup gate.
 
 ## 3) Go-live hold (for later)
 

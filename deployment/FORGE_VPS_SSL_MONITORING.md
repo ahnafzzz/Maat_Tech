@@ -50,13 +50,9 @@ Set these in production `.env` and never commit secrets:
   - admin login
 - Review logs for failed auth attempts and mail delivery failures
 
-## 7. Performance
-- Run:
-  - `php artisan migrate --force`
-  - `php artisan optimize:clear`
-  - `php artisan config:cache`
-  - `php artisan route:cache`
-  - `php artisan view:cache`
+## 7. Performance and safe deployment
+- Follow [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) for artifact validation, maintenance mode, writer quiescence, verified backup, migrations, cache rebuild, health checks, and recovery.
+- Never run an unguarded migration as a routine deployment shortcut.
 - Use a CDN for images and static assets where possible
 - Optimize uploaded product images to WebP or AVIF during content preparation
 

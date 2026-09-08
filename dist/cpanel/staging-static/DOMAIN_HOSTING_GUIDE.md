@@ -89,18 +89,9 @@ Use this for real operations.
    - SESSION_DRIVER=redis (recommended)
    - QUEUE_CONNECTION=redis (recommended)
    - MAIL_* with real SMTP provider
-5. Install dependencies:
-   - composer install --no-dev --optimize-autoloader
-   - npm ci && npm run build
-6. Laravel setup:
-   - php artisan key:generate
-   - php artisan migrate --force
-   - php artisan db:seed --force (if needed)
-   - php artisan storage:link
-7. Optimization:
-   - php artisan config:cache
-   - php artisan route:cache
-   - php artisan view:cache
+5. Prepare dependencies and built assets in an isolated build workspace.
+6. For first installation only, create the production configuration and generate `APP_KEY` once. Initialize the database and explicitly seed the catalog only if intended.
+7. For every routine deployment, follow the current repository's `deployment/DEPLOYMENT_RUNBOOK.md`; it preserves persistent paths and requires a verified backup before migrations.
 8. Set permissions for storage and bootstrap/cache.
 9. Configure Nginx document root to laravel-app/public.
 10. Enable SSL and redirect HTTP -> HTTPS.

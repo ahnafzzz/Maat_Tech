@@ -67,42 +67,89 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup SSH key
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, bcmath, pdo_sqlite, sqlite3, intl, curl, xml, zip
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: laravel-app/package-lock.json
+
+      - name: Prepare production artifact before remote changes
+        working-directory: laravel-app
+        run: |
+          composer install --no-dev --no-interaction --prefer-dist --classmap-authoritative --optimize-autoloader
+          composer check-platform-reqs --no-dev
+          npm ci
+          npm run build
+          test -f public/build/manifest.json
+
+      - name: Load SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
 
-      - name: Add server to known_hosts
+      - name: Configure trusted SSH host identity
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 0700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
 
-      - name: Sync files to server
+      - name: Upload prepared release to isolated incoming directory
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
+          set -euo pipefail
+          for value in "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_USER" "$DEPLOY_PATH"; do
+            test -n "$value"
+          done
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          incoming="${DEPLOY_PATH}.incoming-${GITHUB_SHA}"
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$remote" "test -d '$DEPLOY_PATH/laravel-app' && mkdir -p '$incoming'"
           rsync -az --delete \
             --exclude '.git' \
             --exclude '.github' \
             --exclude 'node_modules' \
-            --exclude 'vendor' \
-            --exclude 'laravel-app/.env' \
-            -e "ssh -p ${{ secrets.DEPLOY_PORT }}" \
-            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+            -e "ssh -o StrictHostKeyChecking=yes -p $DEPLOY_PORT" \
+            ./ "$remote:$incoming/"
 
-      - name: Run remote deployment commands
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            set -e
-            cd "${{ secrets.DEPLOY_PATH }}/laravel-app"
-            composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
-            npm ci
-            npm run build
-            php artisan migrate --force
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-            php artisan queue:restart
+      - name: Deploy with lock, backup, migration, and health gate
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_BACKUP_PATH: ${{ secrets.DEPLOY_BACKUP_PATH }}
+          DEPLOY_HEALTHCHECK_URL: ${{ secrets.DEPLOY_HEALTHCHECK_URL }}
+          DEPLOY_QUIESCE_HOOK: ${{ secrets.DEPLOY_QUIESCE_HOOK }}
+          DEPLOY_RESUME_HOOK: ${{ secrets.DEPLOY_RESUME_HOOK }}
+        run: |
+          set -euo pipefail
+          for value in "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_USER" "$DEPLOY_PATH" "$DEPLOY_BACKUP_PATH" "$DEPLOY_HEALTHCHECK_URL" "$DEPLOY_QUIESCE_HOOK" "$DEPLOY_RESUME_HOOK"; do
+            test -n "$value"
+          done
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$DEPLOY_BACKUP_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$DEPLOY_QUIESCE_HOOK" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$DEPLOY_RESUME_HOOK" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          [[ "$DEPLOY_HEALTHCHECK_URL" =~ ^https?://[^[:space:]]+$ ]]
+          incoming="${DEPLOY_PATH}.incoming-${GITHUB_SHA}"
+          remote="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$remote" \
+            "bash '$incoming/deployment/deploy-laravel.sh' '$incoming' '$DEPLOY_PATH' '$DEPLOY_BACKUP_PATH' '$DEPLOY_HEALTHCHECK_URL' '$DEPLOY_QUIESCE_HOOK' '$DEPLOY_RESUME_HOOK' '$GITHUB_SHA'"
+          ssh -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$remote" "rm -rf -- '$incoming'"
