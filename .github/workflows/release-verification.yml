@@ -33,6 +33,15 @@ jobs:
   php-compatibility:
     name: PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      DB_URL: ""
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      QUEUE_CONNECTION: sync
     strategy:
       fail-fast: false
       matrix:
@@ -52,17 +61,27 @@ jobs:
           coverage: none
       - name: Install locked Composer dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Create ephemeral testing key
+        run: |
+          test_key=$(openssl rand -base64 32)
+          printf 'APP_KEY=base64:%s\n' "$test_key" >> "$GITHUB_ENV"
       - name: Validate Composer metadata and platform
         run: |
           composer validate --strict --no-check-publish
           composer check-platform-reqs
       - name: Confirm isolated database configuration
         run: |
-          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php artisan config:show database
-          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); exit(config("database.default") === "sqlite" && config("database.connections.sqlite.database") === ":memory:" ? 0 : 1);'
+          php artisan config:show database
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          exit(config('database.default') === 'sqlite'
+              && config('database.connections.sqlite.database') === ':memory:' ? 0 : 1);
+          PHP
       - name: Run isolated Laravel suite
-        run: |
-          APP_ENV=testing DB_CONNECTION=sqlite DB_DATABASE=:memory: DB_URL= CACHE_STORE=array SESSION_DRIVER=array MAIL_MAILER=array QUEUE_CONNECTION=sync php artisan test
+        run: php artisan test
 
   frontend:
     name: Node 24 build and deployment fixtures
