@@ -8,7 +8,7 @@ Maintained Laravel paths:
 
 1. `.github/workflows/laravel-auto-deploy.yml` prepares and tests an artifact, then deploys `main` to an explicitly configured Linux SSH target. Feature branches never deploy.
 2. `deployment/deploy-laravel.sh` is the underlying in-place deployment path for a VPS, Forge deployment hook, or cPanel account that provides SSH plus the required tools. It uses a temporary incoming directory, not a release-directory/symlink architecture.
-3. `laravel-app/Dockerfile` builds a runtime image. Container startup validates configuration and starts the application only; it never generates a key, migrates, or seeds. Database backup and migration must be a separately controlled operator job before the new container receives traffic.
+3. `laravel-app/Dockerfile` builds a PHP 8.4 Apache runtime image. Apache handles ordinary request-per-process PHP execution and static files from `/app/public`; no persistent application worker is enabled. Container startup validates configuration and starts Apache only; it never generates a key, migrates, or seeds. Database backup and migration must be a separately controlled operator job before the new container receives traffic.
 
 `netlify.toml`, `deployment/prepare-cpanel-package.sh`, and the root static HTML package are legacy/static alternatives. They do not deploy Laravel, its database, or uploaded media.
 
@@ -27,7 +27,15 @@ The host must provide a supported PHP 8.3 or newer release with the application 
 
 The verified release matrix is PHP 8.3 and 8.4 with Composer 2.10, plus Node 24 LTS. As of September 2026, PHP 8.3 receives security fixes through December 2027 and PHP 8.4 through December 2028. Node 24 remains supported through April 2028; Node 20 reached end of life in April 2026 and is not a maintained deployment runtime. See the official [PHP supported versions](https://www.php.net/supported-versions.php) and [Node.js release schedule](https://github.com/nodejs/Release/blob/main/schedule.json).
 
-Production `.env` must already exist, be readable only by the application/deploy identity, retain a valid stable `APP_KEY`, use `APP_ENV=production`, disable debug mode, use an HTTPS `APP_URL`, and contain valid database configuration. For SQLite, `DB_DATABASE` must be an absolute persistent path outside the application tree. External MySQL/PostgreSQL databases are never copied as application files.
+Production `.env` must already exist, be readable only by the application/deploy identity, retain a valid stable `APP_KEY`, use `APP_ENV=production`, disable debug mode, use an HTTPS `APP_URL`, set `SESSION_SECURE_COOKIE=true`, and contain valid database configuration. For SQLite, `DB_DATABASE` must be an absolute persistent path outside the application tree. External MySQL/PostgreSQL databases are never copied as application files.
+
+## HTTP runtime and TLS topology
+
+The container uses the maintained official [`php:8.4-apache` image](https://hub.docker.com/_/php). It listens on the unprivileged `PORT` environment variable, which defaults to `8000` and must be an integer from 1024 through 65535. Its only document root is `/app/public`; Laravel source, Composer metadata, vendor code, environment files, and `/data` are outside that root. Apache serves Vite assets and the `public/storage` link directly, denies directory indexes and PHP files under public uploads, sends access/error logs to container stdout/stderr, and remains PID 1 through the official `apache2-foreground` launcher. The inherited `SIGWINCH` stop signal requests [graceful Apache shutdown](https://httpd.apache.org/docs/2.4/stopping.html#gracefulstop).
+
+TLS is not terminated inside this image. A hosting ingress or reverse proxy terminates HTTPS, preserves the public `Host` header, and forwards plain HTTP to the container. Following Laravel's [trusted-proxy configuration](https://laravel.com/docs/13.x/requests#configuring-trusted-proxies), set `TRUSTED_PROXIES` to the comma-separated IP addresses or CIDRs of only those immediate proxies, for example an internal load-balancer subnet determined from the actual host configuration. Wildcards and `REMOTE_ADDR` are rejected by production preflight. Laravel accepts `X-Forwarded-For`, `X-Forwarded-Port`, and `X-Forwarded-Proto` only from the configured addresses; `X-Forwarded-Host` is never trusted. With no value, no proxy is trusted.
+
+For an SSH deployment where the separately managed web server terminates TLS and passes HTTPS directly to PHP, leave `TRUSTED_PROXIES` empty. If that web server instead proxies to another HTTP application process, configure only its verified address or CIDR. Do not copy provider ranges from examples or use a trust-all value.
 
 ## First installation
 
@@ -98,5 +106,4 @@ After recovery, run production preflight, verify `/up`, resume writers, inspect 
 - Verify persistent Docker/cPanel volumes and storage links on the actual host.
 - Validate the deployment and migrations against a disposable instance of the production database engine.
 - Continue automated Composer and npm advisory audits and review new findings before release.
-- Replace the container's `php artisan serve` development server with a reviewed production HTTP runtime and reverse-proxy/process model before treating that image as production-ready.
-- Restrict production trusted-proxy ranges to the actual reverse proxy or load balancer. The application currently trusts forwarding headers from every address in production, so the container must not be directly exposed to untrusted clients.
+- Configure the real TLS ingress, verified proxy CIDRs, public host preservation, and graceful-stop interval, then exercise them on the selected hosting platform. The container must not be exposed directly as an HTTPS endpoint because it serves HTTP only.

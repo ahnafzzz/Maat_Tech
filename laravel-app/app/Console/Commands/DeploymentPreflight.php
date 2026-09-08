@@ -38,6 +38,17 @@ class DeploymentPreflight extends Command
             $errors[] = 'APP_URL must use HTTPS.';
         }
 
+        if (config('session.secure') !== true) {
+            $errors[] = 'SESSION_SECURE_COOKIE must be true.';
+        }
+
+        foreach ((array) config('trustedproxy.proxies', []) as $proxy) {
+            if (! $this->isValidTrustedProxy((string) $proxy)) {
+                $errors[] = 'TRUSTED_PROXIES must contain only explicit IP addresses or CIDRs.';
+                break;
+            }
+        }
+
         if (! in_array($driver, ['sqlite', 'mysql', 'pgsql'], true)) {
             $errors[] = 'DB_CONNECTION must be sqlite, mysql, or pgsql for the maintained deployment scripts.';
         }
@@ -89,5 +100,26 @@ class DeploymentPreflight extends Command
         $this->components->info('Production deployment preflight passed.');
 
         return self::SUCCESS;
+    }
+
+    private function isValidTrustedProxy(string $proxy): bool
+    {
+        if (in_array($proxy, ['*', '**', 'REMOTE_ADDR'], true)) {
+            return false;
+        }
+
+        [$address, $prefix] = array_pad(explode('/', $proxy, 2), 2, null);
+
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
+            return false;
+        }
+
+        if ($prefix === null) {
+            return true;
+        }
+
+        $maximum = str_contains($address, ':') ? 128 : 32;
+
+        return ctype_digit($prefix) && (int) $prefix <= $maximum;
     }
 }

@@ -5,7 +5,7 @@ COPY package.json package-lock.json vite.config.js ./
 COPY resources ./resources
 RUN npm ci && npm run build
 
-FROM php:8.4-cli
+FROM php:8.4-apache
 
 # Install system packages and PHP extensions required for Laravel & PostgreSQL
 RUN apt-get update && apt-get install -y \
@@ -26,6 +26,8 @@ COPY --from=composer:2.10 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 COPY . .
 COPY --from=frontend /build/public/build ./public/build
+COPY docker/apache-ports.conf /etc/apache2/ports.conf
+COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 
 # Prevent Composer memory limit errors during build
 ENV COMPOSER_MEMORY_LIMIT=-1
@@ -38,6 +40,10 @@ RUN mkdir -p storage/app/public storage/framework/cache storage/framework/sessio
     && ln -s ../storage/app/public public/storage \
     && chmod 0755 docker/start.sh \
     && chown -R www-data:www-data storage bootstrap/cache /data
+
+ENV PORT=8000
+
+EXPOSE 8000
 
 VOLUME ["/app/storage", "/data"]
 

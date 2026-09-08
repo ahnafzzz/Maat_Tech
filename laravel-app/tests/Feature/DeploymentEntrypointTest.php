@@ -10,9 +10,14 @@ class DeploymentEntrypointTest extends TestCase
     {
         $dockerfile = file_get_contents(base_path('Dockerfile'));
         $startup = file_get_contents(base_path('docker/start.sh'));
+        $virtualHost = file_get_contents(base_path('docker/apache-vhost.conf'));
 
         $this->assertStringContainsString('CMD ["docker/start.sh"]', $dockerfile);
+        $this->assertStringContainsString('FROM php:8.4-apache', $dockerfile);
+        $this->assertStringContainsString('exec apache2-foreground', $startup);
+        $this->assertStringContainsString('DocumentRoot /app/public', $virtualHost);
         $this->assertStringContainsString('deployment:preflight', $startup);
+        $this->assertStringNotContainsString('artisan serve', $dockerfile.$startup);
         $this->assertStringNotContainsString('key:generate', $dockerfile.$startup);
         $this->assertStringNotContainsString('migrate', $dockerfile.$startup);
         $this->assertStringNotContainsString('db:seed', $dockerfile.$startup);
