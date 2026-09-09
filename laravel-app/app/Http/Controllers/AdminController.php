@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ProductWriteRequest;
 use App\Models\Admin;
 use App\Models\AdminInvitationRequest;
 use App\Models\Category;
@@ -12,12 +13,12 @@ use App\Notifications\AdminTwoFactorCodeNotification;
 use App\Services\AdminInvitationService;
 use App\Services\AdminSessionVersion;
 use App\Services\AdminTwoFactorService;
+use App\Services\ProductWriteService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\MessageBag;
 use Illuminate\Support\Str;
@@ -33,6 +34,7 @@ class AdminController extends Controller
         private readonly AdminSessionVersion $sessionVersion,
         private readonly AdminInvitationService $invitationService,
         private readonly AdminTwoFactorService $twoFactorService,
+        private readonly ProductWriteService $productWriteService,
     ) {}
 
     public function login(): View
@@ -196,43 +198,29 @@ class AdminController extends Controller
         ]);
     }
 
-    public function storeProduct(Request $request): RedirectResponse
+    public function storeProduct(ProductWriteRequest $request): RedirectResponse
     {
-        $validated = $this->productValidation($request);
-
-        $product = Product::create([
-            ...collect($validated)->except(['images', 'video'])->all(),
-            'slug' => Str::slug($validated['name']).'-'.Str::lower(Str::random(5)),
-            'sku' => 'ML-'.Str::upper(Str::random(8)),
-            'specs' => [],
-            'images' => [],
-        ]);
-        $this->syncProductMedia($request, $product);
+        $this->productWriteService->create($request);
 
         return back()->with('status', 'Product created.');
     }
 
-    public function updateProduct(Request $request, Product $product): RedirectResponse
+    public function updateProduct(ProductWriteRequest $request, Product $product): RedirectResponse
     {
-        $validated = $this->productValidation($request);
-        $remainingImages = collect($product->images ?? [])->diff($request->input('remove_images', []))->count();
+        $result = $this->productWriteService->update($request, $product);
 
-        if ($remainingImages + count($request->file('images', [])) > 10) {
-            throw ValidationException::withMessages(['images' => 'A product can have a maximum of 10 photos. Remove existing photos before uploading more.']);
-        }
-
-        $product->update(collect($validated)->except(['images', 'video'])->all());
-        $this->syncProductMedia($request, $product);
-
-        return back()->with('status', 'Product updated.');
+        return back()->with('status', $result['cleanup_failed']
+            ? 'Product updated. Some obsolete media could not be cleaned up and should be retried operationally.'
+            : 'Product updated.');
     }
 
     public function destroyProduct(Product $product): RedirectResponse
     {
-        $this->deleteProductMedia($product);
-        $product->delete();
+        $result = $this->productWriteService->delete($product);
 
-        return back()->with('status', 'Product and its media were deleted.');
+        return back()->with('status', $result['cleanup_failed']
+            ? 'Product deleted. Some unreferenced media could not be cleaned up and should be retried operationally.'
+            : 'Product and its media were deleted.');
     }
 
     public function storeCategory(Request $request): RedirectResponse
@@ -427,29 +415,6 @@ class AdminController extends Controller
         }
     }
 
-    private function productValidation(Request $request): array
-    {
-        return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'category_id' => ['required', 'exists:categories,id'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'compare_at_price' => ['nullable', 'numeric', 'gte:price'],
-            'discount_amount' => ['nullable', 'numeric', 'min:0', 'lte:price'],
-            'stock' => ['required', 'integer', 'min:0'],
-            'status' => ['required', 'in:active,draft,archived'],
-            'is_featured' => ['nullable', 'boolean'],
-            'seo_title' => ['nullable', 'string', 'max:255'],
-            'seo_description' => ['nullable', 'string', 'max:500'],
-            'description' => ['nullable', 'string'],
-            'images' => ['nullable', 'array', 'max:10'],
-            'images.*' => ['image', 'max:5120'],
-            'video' => ['nullable', 'file', 'mimetypes:video/mp4,video/webm,video/quicktime', 'max:102400'],
-            'remove_images' => ['nullable', 'array'],
-            'remove_images.*' => ['string'],
-            'remove_video' => ['nullable', 'boolean'],
-        ]);
-    }
-
     private function completeAuthentication(Request $request, Admin $admin): void
     {
         $this->twoFactorService->supersedeBound(
@@ -486,47 +451,5 @@ class AdminController extends Controller
             'superseded' => 'That verification challenge was replaced by a newer sign-in from this browser.',
             default => 'The verification challenge is no longer available. Sign in again to restart verification.',
         };
-    }
-
-    private function syncProductMedia(Request $request, Product $product): void
-    {
-        $existingImages = collect($product->images ?? []);
-        $requestedRemovals = collect($request->input('remove_images', []));
-        $removedImages = $existingImages->intersect($requestedRemovals);
-
-        Storage::disk('public')->delete($removedImages->all());
-        $images = $existingImages->diff($removedImages)->values();
-
-        foreach ($request->file('images', []) as $image) {
-            $images->push($image->store("products/{$product->id}/images", 'public'));
-        }
-
-        $videoPath = $product->video_path;
-        if ($request->boolean('remove_video') && $videoPath) {
-            Storage::disk('public')->delete($videoPath);
-            $videoPath = null;
-        }
-
-        if ($request->hasFile('video')) {
-            if ($videoPath) {
-                Storage::disk('public')->delete($videoPath);
-            }
-
-            $videoPath = $request->file('video')->store("products/{$product->id}/video", 'public');
-        }
-
-        $product->update([
-            'images' => $images->all(),
-            'image' => $images->first(),
-            'video_path' => $videoPath,
-        ]);
-    }
-
-    private function deleteProductMedia(Product $product): void
-    {
-        Storage::disk('public')->delete(array_filter([
-            ...($product->images ?? []),
-            $product->video_path,
-        ]));
     }
 }

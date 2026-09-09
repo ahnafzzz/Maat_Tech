@@ -3,29 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ProductWriteRequest;
 use App\Models\Product;
-use Illuminate\Http\Request;
+use App\Services\ProductWriteService;
 
 class ProductController extends Controller
 {
+    public function __construct(private readonly ProductWriteService $productWriteService) {}
+
     public function index()
     {
         return Product::published()->with('category')->latest()->get();
     }
 
-    public function store(Request $request)
+    public function store(ProductWriteRequest $request)
     {
-        $validated = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'name' => 'required|string',
-            'slug' => 'required|string|unique:products,slug',
-            'price' => 'required|numeric',
-            'stock' => 'required|integer',
-        ]);
+        $result = $this->productWriteService->create($request);
 
-        $product = Product::create($validated);
-
-        return response()->json($product, 201);
+        return response()->json([
+            ...$result['product']->toArray(),
+            'media_cleanup_pending' => $result['cleanup_failed'],
+        ], 201);
     }
 
     public function show(string $id)
@@ -33,18 +31,23 @@ class ProductController extends Controller
         return Product::published()->with('category')->findOrFail($id);
     }
 
-    public function update(Request $request, string $id)
+    public function update(ProductWriteRequest $request, Product $product)
     {
-        $product = Product::findOrFail($id);
-        $product->update($request->only(['name', 'price', 'stock', 'description', 'category_id']));
+        $result = $this->productWriteService->update($request, $product);
 
-        return response()->json($product);
+        return response()->json([
+            ...$result['product']->toArray(),
+            'media_cleanup_pending' => $result['cleanup_failed'],
+        ]);
     }
 
-    public function destroy(string $id)
+    public function destroy(Product $product)
     {
-        Product::findOrFail($id)->delete();
+        $result = $this->productWriteService->delete($product);
 
-        return response()->json(['message' => 'Deleted']);
+        return response()->json([
+            'message' => 'Deleted',
+            'media_cleanup_pending' => $result['cleanup_failed'],
+        ]);
     }
 }

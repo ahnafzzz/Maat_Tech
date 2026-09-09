@@ -14,6 +14,10 @@ class Product extends Model
         'images' => 'array',
         'variants' => 'array',
         'is_featured' => 'boolean',
+        'price' => 'decimal:2',
+        'compare_at_price' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'stock' => 'integer',
     ];
 
     public function category()
