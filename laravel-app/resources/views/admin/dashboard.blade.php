@@ -23,7 +23,7 @@
     @if($admin->is_lead)
         <section class="panel mt-7 overflow-hidden rounded-lg">
             <header class="flex items-center justify-between border-b border-cyber-border px-5 py-4">
-                <h2 class="flex items-center gap-2 font-mono text-sm text-white"><i data-lucide="inbox" class="h-4 w-4 text-amber-400"></i>PENDING_INVITATION_REQUESTS</h2>
+                <h2 class="flex items-center gap-2 font-mono text-sm text-white"><i data-lucide="inbox" class="h-4 w-4 text-amber-400"></i>OPEN_INVITATION_REQUESTS</h2>
                 <span class="rounded-md border border-amber-800 bg-amber-950/50 px-2 py-1 font-mono text-[10px] text-amber-300">{{ $requests->count() }} QUEUED</span>
             </header>
             <div class="divide-y divide-cyber-border">
@@ -34,14 +34,22 @@
                             <p class="mt-1 font-semibold text-white">{{ $requestItem->name }}</p>
                             <p class="mt-1 text-sm text-slate-400">{{ $requestItem->email }}</p>
                             <p class="mt-1 text-xs text-slate-500">Requested by {{ $requestItem->requester?->admin_id }} • {{ $requestItem->created_at?->diffForHumans() }}</p>
+                            <p class="mt-1 text-xs text-slate-500">{{ strtoupper($requestItem->status) }}@if($requestItem->token_expires_at) • link expires {{ $requestItem->token_expires_at->diffForHumans() }} • delivery {{ strtoupper($requestItem->delivery_status) }}@endif</p>
                         </div>
-                        <div class="grid gap-3 sm:grid-cols-2">
-                            <form method="POST" action="{{ route('admin.invitations.approve', $requestItem) }}">@csrf<button class="w-full rounded-lg border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-xs font-mono text-emerald-300 hover:bg-emerald-900/50">APPROVE</button></form>
-                            <form method="POST" action="{{ route('admin.invitations.reject', $requestItem) }}" class="grid gap-2">@csrf<input name="decision_note" placeholder="Reason (optional)" class="rounded-lg border border-cyber-border bg-[#080c12] px-3 py-2 text-xs text-white outline-none focus:border-tech-500"><button class="rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-xs font-mono text-rose-300 hover:bg-rose-900/50">REJECT</button></form>
-                        </div>
+                        @if($requestItem->status === \App\Models\AdminInvitationRequest::STATUS_PENDING)
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <form method="POST" action="{{ route('admin.invitations.approve', $requestItem) }}">@csrf<button class="w-full rounded-lg border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-xs font-mono text-emerald-300 hover:bg-emerald-900/50">APPROVE</button></form>
+                                <form method="POST" action="{{ route('admin.invitations.reject', $requestItem) }}" class="grid gap-2">@csrf<input name="decision_note" placeholder="Reason (optional)" class="rounded-lg border border-cyber-border bg-[#080c12] px-3 py-2 text-xs text-white outline-none focus:border-tech-500"><button class="rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-xs font-mono text-rose-300 hover:bg-rose-900/50">REJECT</button></form>
+                            </div>
+                        @else
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <form method="POST" action="{{ route('admin.invitations.resend', $requestItem) }}">@csrf<button class="w-full rounded-lg border border-tech-700 bg-tech-950/40 px-4 py-3 text-xs font-mono text-tech-300 hover:bg-tech-900/50">RESEND</button></form>
+                                <form method="POST" action="{{ route('admin.invitations.revoke', $requestItem) }}">@csrf<button class="w-full rounded-lg border border-rose-900 bg-rose-950/40 px-4 py-3 text-xs font-mono text-rose-300 hover:bg-rose-900/50">REVOKE</button></form>
+                            </div>
+                        @endif
                     </article>
                 @empty
-                    <div class="px-5 py-8 text-sm text-slate-500">No invitation requests are pending.</div>
+                    <div class="px-5 py-8 text-sm text-slate-500">No invitation requests require action.</div>
                 @endforelse
             </div>
         </section>

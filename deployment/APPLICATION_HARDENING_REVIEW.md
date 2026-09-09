@@ -1,8 +1,10 @@
-# Application hardening review — Step 10
+# Application hardening review — through Step 12
 
 Review date: 2026-09-09  
 Reviewed branch: `codex/production-hardening`  
-Reviewed commit: `0f96842968bbb4845a106c9bb90fd0626ddaacab`
+Baseline review commit: `0f96842968bbb4845a106c9bb90fd0626ddaacab`
+
+Step 12 starting checkpoint: `d83a1e4a59d82a7f284c7b84949e40069dcd5cac`
 
 ## Checkpoint and verification evidence
 
@@ -19,8 +21,8 @@ Local verification was run only after forcing and printing `APP_ENV=testing`, SQ
 | Checkout transaction and authorization | Resolved in current code | Web and API orders both call `CheckoutService::checkout` (`StorefrontController.php:96-102`; `Api/OrderController.php:69-75`). Attempt creation, cart/product locks, stock decrement, order creation, cart deletion, and attempt completion share one retried transaction (`CheckoutService.php:73-175`). Order reads are customer/session scoped (`StorefrontController.php:127-135`; `Api/OrderController.php:16-26`). Existing rollback, ownership, idempotency, and inactive-product tests pass. |
 | Cart duplicate tolerance | Resolved as a compatibility behavior, not as an invariant | Reads aggregate duplicate rows and mutations lock and collapse them (`SessionCartService.php:47-77,105-128`); checkout locks and aggregates every customer cart (`CheckoutService.php:246-261`). Existing duplicate-cart tests pass. |
 | Cart creation/item uniqueness and login merge | **Unresolved** | Neither `carts.user_id` nor `(cart_id, product_id)` has a unique constraint (`2026_07_14_054522_create_carts_table.php:14-19`; `2026_07_14_054524_create_cart_items_table.php:14-20`). Locking an empty cart query cannot serialize two first-cart creators, and API cart reads also call `firstOrCreate` without a database invariant (`Api/CartController.php:16-23`). Login merge commits each product separately and clears the session only after cart and wishlist loops (`CartMergeService.php:15-27`), so a stale/missing later product can leave earlier additions committed while retaining the entire guest cart for a duplicating retry. |
-| Invitation authorization | Resolved | All invitation routes require `admin.auth`; approve/reject additionally require `is_lead` (`routes/web.php:77-92`; `AdminController.php:250-275`). Active status and administrator session version are checked by the middleware (`AdminAuth.php:15-33`). |
-| Invitation lifecycle/onboarding | **Unresolved** | Approval and rejection do not require `status=pending`, lock the request, or share a transaction (`AdminController.php:250-284`). Approval immediately creates an active administrator with an undisclosed random password, while the response refers to a “secure invite delivery hook” that has no route/service implementation (`AdminController.php:255-269`; route inventory in `routes/web.php:69-110`). The table has no token or expiration (`2026_07_14_140000_create_commerce_operations_tables.php:52-63`). Requests also do not reserve/check email uniqueness against administrators, so approval can fail late on `admins.email`. |
+| Invitation authorization | Resolved | Request creation remains available to active authenticated administrators. Approval, rejection, resend, and revocation require `admin.auth` and recheck active lead status inside their transaction (`routes/web.php`; `AdminInvitationService.php`). Recipient acceptance is public only through a secret-bearing invitation and never grants lead status. |
+| Invitation lifecycle/onboarding | **Resolved at the application boundary in Step 12; production-engine race verification remains** | Pending decisions and acceptance use transactions with row locks and explicit allowed states. Approval creates no account: it records fixed non-lead permissions and a hashed, expiring, single-use secret. Acceptance atomically creates the intended active operator and consumes the invitation; identity conflicts do not overwrite an account. Resend rotates the selector/secret after commit and revocation invalidates it. Focused sequential and migration tests pass; SQLite is not evidence of production-engine locking behavior. |
 | 2FA expiration and ordinary replay | Resolved sequentially | Codes are hashed, expire after ten minutes, and are cleared after successful verification (`AdminController.php:44-50,92-106`). The exact-SHA suite includes successful 2FA completion coverage. |
 | 2FA attempts, concurrent replay, and pending session | **Unresolved** | Login and challenge share an IP-only five-per-minute limiter (`AppServiceProvider.php:22-24`; `routes/web.php:70-75`), but there is no challenge/account attempt counter or invalidation threshold. Verification is read-then-save without a conditional consume/lock, so two requests holding the valid code can both pass before either clears it (`AdminController.php:92-106`). Expired/invalid challenges leave `pending_admin_id` and stale code fields in place; the challenge GET tests only whether the session key exists (`AdminController.php:77-96`). A second login overwrites the administrator-wide code, invalidating another pending browser. Production-engine race behavior remains to be demonstrated. |
 | Public product/review visibility | **Resolved for application routes in Step 11** | Explicit `Product::published()` and `Review::approved()` scopes define the boundary without globally hiding administrative/bookkeeping records (`Product.php:29-36`; `Review.php:22-25`). Homepage featured products and public category counts, catalog, detail, related products, sitemap, and public product APIs use the product scope; detail eager-loads only approved reviews (`HomeController.php:11-72`; `routes/web.php:25-42`; `Api/ProductController.php:11-34`). Cart, API cart, wishlist, and login merge resolve current public data through the same scope; unavailable saved entries render generically and remain removable/clearable without GET deletion (`StorefrontController.php:20-230`; `SessionCartService.php:15-159`; `CartMergeService.php:15-36`). The review template now renders approved `title`, `rating`, and escaped `body` (`product.blade.php:53-63`). `PublicCatalogVisibilityTest` verifies these routes, rejected mutations and unchanged state, escaping, admin access, order snapshots, and replay after deactivation. |
@@ -40,17 +42,21 @@ Local verification was run only after forcing and printing `APP_ENV=testing`, SQ
 
 The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eight focused visibility tests (117 assertions). The frontend production build also completed. These results do not change the production-engine concurrency limitations below.
 
+## Resolved administrator invitation checkpoint
+
+### Atomic, expiring acceptance workflow — resolved in Step 12
+
+- States are explicit: `pending`, `approved`, `rejected`, `accepted`, `expired`, and `revoked`. Lead decisions, resend/revoke, and acceptance lock and recheck the invitation inside a retried transaction. Invalid or repeated transitions return controlled validation errors.
+- Any active administrator may retain the existing request workflow. Only an active lead may approve, reject, resend, or revoke; lead authorization is rechecked under lock. Approval records exactly `{"is_lead": false}` and creates no administrator.
+- Approval and resend generate a random non-secret selector plus a separate 256-bit secret. Only the secret's SHA-256 hash is stored, and expiry defaults to 60 minutes (`ADMIN_INVITATION_EXPIRATION_MINUTES`). The selector is the only value in the HTTP path; the emailed secret is placed in the URL fragment, removed immediately by the standalone acceptance page, and submitted in the POST body so ordinary request logs and referrers do not receive it. Acceptance errors render directly under no-store headers rather than flashing the secret into a potentially database-backed session.
+- Acceptance GET is non-consuming and uses no third-party assets. It sends no-store, no-referrer, no-index, CSP, and frame-ancestor headers. Acceptance POST enforces the established 12-character mixed-case/number/symbol password policy, ignores submitted identity/role fields, rechecks expiry and identity conflicts, creates the intended active non-lead account, and consumes the invitation in the same transaction. It then redirects to normal administrator login, leaving existing login and 2FA authoritative.
+- Notification dispatch occurs after the approval/resend transaction commits. Delivery failure leaves the request approved with a recoverable `failed` marker. Lead resend is limited to three attempts per hour per invitation, rotates both selector and secret, and invalidates the superseded link. Revocation clears the active selector/hash.
+- The additive migration reserves normalized email for safely completable pending rows. It issues no token and creates no account for legacy pending data; duplicate or administrator-conflicting legacy pending rows become revoked for explicit re-request. A legacy approved row is marked accepted only when the exact administrator ID and normalized email already exist; otherwise it becomes expired. No account is activated by migration.
+- The isolated focused run passed 13 tests (161 assertions), including authorization, state replay, expiry, resend, revocation, token/identity/role tampering, account-conflict and injected-failure rollback, post-commit delivery failure, normal login, and an actual old-schema migration rehearsal. The full isolated suite passed 115 tests (858 assertions). These sequential SQLite results do not prove production-engine lock behavior.
+
 ## Ordered application fixes still needed before launch
 
-### 1. Make administrator invitations an atomic, expiring acceptance workflow — High
-
-- **Consequence:** A lead can approve rejected/already-reviewed requests; concurrent decisions can conflict or raise database errors; an approved row can diverge from administrator creation. The created account is active before the intended recipient securely establishes a password, but no acceptance mechanism exists, so onboarding is incomplete.
-- **Affected operations:** `POST /admin/invitations`, `POST /admin/invitations/{id}/approve`, and `/reject`.
-- **Evidence/reproduction:** In an isolated database, reject a pending request and then approve the same ID; current code performs both transitions because it never checks status. Approving a request whose email already exists reaches the unique constraint only during `Admin::create`. Route inventory contains no recipient acceptance endpoint.
-- **Smallest fix:** Add an expiring, hashed, one-use acceptance token and explicit pending/approved/rejected/expired states; reserve both ID and normalized email; atomically condition decisions on pending state; create the administrator inactive (or only create it) when the invited recipient establishes a policy-compliant password. Keep lead-only review authorization.
-- **Verification:** Sequential and two-connection tests for approve/approve, approve/reject, expired token, token replay, duplicate ID/email, inactive reviewer, non-lead denial, password setup, and rollback on delivery/creation failures. Fake notifications only.
-
-### 2. Atomically consume 2FA challenges and bound their lifecycle — Medium
+### 1. Atomically consume 2FA challenges and bound their lifecycle — Medium
 
 - **Consequence:** A captured valid code can establish more than one session when verification requests race. Distributed/IP-changing guessing is not bounded per challenge, expired pending sessions persist, and another login for the same admin invalidates the first browser's code.
 - **Affected operations:** `POST /admin/login`, `GET|POST /admin/two-factor`.
@@ -58,7 +64,7 @@ The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eig
 - **Smallest fix:** Store a server-generated challenge identifier with hashed code, expiry, attempt count, and consumed timestamp (or equivalent cache record); bind the pending session to it; conditionally consume one unexpired/unconsumed row in a transaction; clear pending state on expiry, exhaustion, restart, and successful non-2FA login. Retain request throttling as an outer control.
 - **Verification:** Frozen-time expiry tests, per-challenge attempt exhaustion, pending-session replacement/cleanup, inactive-admin transition, sequential replay, and a two-connection consume race that yields exactly one authenticated session.
 
-### 3. Establish cart invariants and all-or-nothing login merge — Medium
+### 2. Establish cart invariants and all-or-nothing login merge — Medium
 
 - **Consequence:** Concurrent first use can create duplicate carts/items. Current aggregation masks many duplicates, but increases race/maintenance complexity. A failed multi-item login merge can commit early items, retain the guest cart, and add those items again on retry (bounded by stock but customer-visible).
 - **Affected operations:** `GET|POST /api/cart`, web cart add/update/remove, customer registration/login merge, authenticated checkout cart loading.
@@ -66,7 +72,7 @@ The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eig
 - **Smallest fix:** Migrate existing duplicates deterministically, add one-cart-per-customer and `(cart_id, product_id)` unique constraints, serialize first creation (for example by locking the customer row), handle expected unique violations, and transact the database portion of a prevalidated cart/wishlist merge before clearing only the merged session snapshot.
 - **Verification:** Migration tests with duplicate fixtures; rollback test for a stale guest product; two real database connections for first-cart and same-product races; then re-run duplicate compatibility, checkout, and ownership tests.
 
-### 4. Unify authorized product-write validation — Medium
+### 3. Unify authorized product-write validation — Medium
 
 - **Consequence:** A valid administrator can create/update catalog data through the API without the web route's status, bounds, discount, string-length, or media consistency rules, causing invalid catalog state or engine-specific errors.
 - **Affected operations:** `POST|PUT /api/products/{id?}`.
@@ -80,7 +86,7 @@ These checks cannot be closed by the current in-memory SQLite suite. After choos
 
 1. Run the cart cleanup/constraint migration against fixtures containing multiple carts per user and repeated product rows; verify quantities, foreign keys, indexes, rollback behavior, and an upgrade from the pre-fix schema.
 2. Race first-cart creation, same-product add/update, login merge versus cart mutation/checkout, and confirm no lost update, duplicate invariant, deadlock leak, or double merge. Confirm the chosen retry strategy recognizes that engine's unique/deadlock SQL states.
-3. Race invitation approve/approve and approve/reject, and 2FA consume/consume; exactly one terminal transition/consumer must succeed with a controlled response for the loser.
+3. Race invitation approve/approve, approve/reject, resend/accept, and accept/accept; exactly one incompatible transition or token consumer must succeed. Also race 2FA consume/consume. SQLite sequential replay is not concurrent evidence.
 4. Re-run checkout stock/idempotency races on the selected engine. Current transaction structure and SQLite tests are strong evidence, but the repository has only sequential stock competition and no two-connection production-engine result.
 5. Apply the complete migration chain to an empty database and a disposable copy of representative pre-hardening data, then run `deployment:preflight` and the full suite without external services.
 
@@ -96,4 +102,4 @@ These are deferred until a platform, database engine, and topology are selected;
 
 ## Recommended next single checkpoint
 
-Implement **the atomic, expiring administrator invitation acceptance workflow** (remaining application backlog item 1). Keep that checkpoint separate from 2FA and cart schema work.
+Implement **atomic 2FA challenge consumption and bounded pending-session lifecycle** (remaining application backlog item 1). Keep that checkpoint separate from cart schema and product-write work.

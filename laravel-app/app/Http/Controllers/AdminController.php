@@ -7,21 +7,31 @@ use App\Models\AdminInvitationRequest;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
+use App\Notifications\AdminInvitationNotification;
 use App\Notifications\AdminTwoFactorCodeNotification;
+use App\Services\AdminInvitationService;
 use App\Services\AdminSessionVersion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\MessageBag;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 class AdminController extends Controller
 {
-    public function __construct(private readonly AdminSessionVersion $sessionVersion) {}
+    public function __construct(
+        private readonly AdminSessionVersion $sessionVersion,
+        private readonly AdminInvitationService $invitationService,
+    ) {}
 
     public function login(): View
     {
@@ -133,7 +143,12 @@ class AdminController extends Controller
             'pendingOrders' => Order::where('status', 'pending')->count(),
             'recentOrders' => Order::with('items.product')->latest('placed_at')->take(8)->get(),
             'admins' => Admin::latest()->get(),
-            'requests' => $admin->is_lead ? AdminInvitationRequest::with('requester')->where('status', 'pending')->latest()->get() : collect(),
+            'requests' => $admin->is_lead ? AdminInvitationRequest::with('requester')
+                ->whereIn('status', [
+                    AdminInvitationRequest::STATUS_PENDING,
+                    AdminInvitationRequest::STATUS_APPROVED,
+                    AdminInvitationRequest::STATUS_EXPIRED,
+                ])->latest()->get() : collect(),
         ]);
     }
 
@@ -236,13 +251,10 @@ class AdminController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:255'],
-            'proposed_admin_id' => ['required', 'regex:/^ADM-\d{4}-[A-Z]$/', 'unique:admin_invitation_requests,proposed_admin_id', 'unique:admins,admin_id'],
+            'proposed_admin_id' => ['required', 'regex:/^ADM-\d{4}-[A-Z]$/'],
         ]);
 
-        AdminInvitationRequest::create([
-            ...$validated,
-            'requested_by_admin_id' => Auth::guard('admin')->id(),
-        ]);
+        $this->invitationService->request(Auth::guard('admin')->user(), $validated);
 
         return back()->with('status', 'Invitation request sent to the Lead Admin.');
     }
@@ -250,38 +262,133 @@ class AdminController extends Controller
     public function approveInvitation(AdminInvitationRequest $requestItem): RedirectResponse
     {
         $lead = Auth::guard('admin')->user();
-        abort_unless($lead->is_lead, 403);
+        $delivery = $this->invitationService->approve($lead, $requestItem->id);
 
-        $admin = Admin::create([
-            'admin_id' => $requestItem->proposed_admin_id,
-            'name' => $requestItem->name,
-            'email' => $requestItem->email,
-            'password' => Hash::make(Str::random(20)),
-            'status' => 'active',
-        ]);
-
-        $requestItem->update([
-            'status' => 'approved',
-            'reviewed_by_admin_id' => $lead->id,
-            'reviewed_at' => now(),
-        ]);
-
-        return back()->with('status', $admin->admin_id.' approved. Set a password through the secure invite delivery hook.');
+        return $this->deliverInvitation($delivery['invitation'], $delivery['selector'], $delivery['token'])
+            ? back()->with('status', $requestItem->proposed_admin_id.' approved. The acceptance invitation was sent.')
+            : back()->withErrors(['invitation' => 'The request was approved, but delivery failed. A lead administrator can resend it.']);
     }
 
     public function rejectInvitation(Request $request, AdminInvitationRequest $requestItem): RedirectResponse
     {
         $lead = Auth::guard('admin')->user();
-        abort_unless($lead->is_lead, 403);
-
-        $requestItem->update([
-            'status' => 'rejected',
-            'decision_note' => $request->string('decision_note')->toString(),
-            'reviewed_by_admin_id' => $lead->id,
-            'reviewed_at' => now(),
-        ]);
+        $validated = $request->validate(['decision_note' => ['nullable', 'string', 'max:2000']]);
+        $this->invitationService->reject($lead, $requestItem->id, $validated['decision_note'] ?? null);
 
         return back()->with('status', 'Invitation request rejected.');
+    }
+
+    public function resendInvitation(AdminInvitationRequest $requestItem): RedirectResponse
+    {
+        $delivery = $this->invitationService->resend(Auth::guard('admin')->user(), $requestItem->id);
+
+        return $this->deliverInvitation($delivery['invitation'], $delivery['selector'], $delivery['token'])
+            ? back()->with('status', 'A replacement invitation was sent. The previous link is invalid.')
+            : back()->withErrors(['invitation' => 'The replacement link was created, but delivery failed. Try resending later.']);
+    }
+
+    public function revokeInvitation(AdminInvitationRequest $requestItem): RedirectResponse
+    {
+        $this->invitationService->revoke(Auth::guard('admin')->user(), $requestItem->id);
+
+        return back()->with('status', 'Invitation revoked.');
+    }
+
+    public function showInvitationAcceptance(string $selector): Response
+    {
+        $invitation = $this->invitationService->findAcceptable($selector);
+        abort_unless($invitation, 404);
+
+        $expired = ! $invitation->token_expires_at || now()->greaterThanOrEqualTo($invitation->token_expires_at);
+
+        return $this->invitationAcceptanceResponse($expired ? null : $invitation, $selector, $expired, status: $expired ? 410 : 200);
+    }
+
+    public function acceptInvitation(Request $request, string $selector): Response|RedirectResponse
+    {
+        $validator = Validator::make($request->only(['token', 'password', 'password_confirmation']), [
+            'token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()->symbols()],
+        ]);
+        $invitation = $this->invitationService->findAcceptable($selector);
+        abort_unless($invitation, 404);
+
+        if ($validator->fails()) {
+            return $this->invitationAcceptanceResponse(
+                $invitation,
+                $selector,
+                false,
+                $validator->errors(),
+                $request->string('token')->toString(),
+                422,
+            );
+        }
+
+        $validated = $validator->validated();
+
+        try {
+            $admin = $this->invitationService->accept($selector, $validated['token'], $validated['password']);
+        } catch (ValidationException $exception) {
+            $invitation = $this->invitationService->findAcceptable($selector);
+
+            return $this->invitationAcceptanceResponse(
+                $invitation,
+                $selector,
+                $invitation === null,
+                new MessageBag($exception->errors()),
+                $invitation ? $validated['token'] : null,
+                $invitation ? 422 : 410,
+            );
+        } catch (Throwable) {
+            return $this->invitationAcceptanceResponse(
+                $invitation,
+                $selector,
+                false,
+                new MessageBag(['invitation' => 'The administrator account could not be created. The invitation remains available; try again later.']),
+                $validated['token'],
+                422,
+            );
+        }
+
+        return redirect()->route('admin.login')->with('status', 'Administrator '.$admin->admin_id.' activated. Sign in to continue.');
+    }
+
+    private function invitationAcceptanceResponse(
+        ?AdminInvitationRequest $invitation,
+        string $selector,
+        bool $expired,
+        ?MessageBag $errors = null,
+        ?string $token = null,
+        int $status = 200,
+    ): Response {
+        return response()->view('admin.accept-invitation', [
+            'invitation' => $invitation,
+            'selector' => $selector,
+            'expired' => $expired,
+            'errors' => $errors ?? new MessageBag,
+            'token' => $token,
+        ], $status)->withHeaders([
+            'Cache-Control' => 'no-store, private',
+            'Pragma' => 'no-cache',
+            'Referrer-Policy' => 'no-referrer',
+            'X-Robots-Tag' => 'noindex, nofollow, noarchive',
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        ]);
+    }
+
+    private function deliverInvitation(AdminInvitationRequest $invitation, string $selector, string $token): bool
+    {
+        try {
+            Notification::route('mail', $invitation->normalized_email)
+                ->notify(new AdminInvitationNotification($invitation, $selector, $token));
+            $this->invitationService->markDelivered($invitation->id, $selector, $token);
+
+            return true;
+        } catch (Throwable) {
+            $this->invitationService->markDeliveryFailed($invitation->id, $selector, $token);
+
+            return false;
+        }
     }
 
     private function productValidation(Request $request): array

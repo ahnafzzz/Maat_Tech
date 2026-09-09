@@ -68,6 +68,11 @@ Route::post('/logout', [CustomerAuthController::class, 'destroy'])->middleware('
 Route::get('/dashboard', [StorefrontController::class, 'dashboard'])->middleware('auth')->name('dashboard');
 
 Route::prefix('admin')->name('admin.')->group(function () {
+    Route::get('/invitations/accept/{selector}', [AdminController::class, 'showInvitationAcceptance'])
+        ->where('selector', '[a-f0-9]{32}')->name('invitations.accept.show');
+    Route::post('/invitations/accept/{selector}', [AdminController::class, 'acceptInvitation'])
+        ->where('selector', '[a-f0-9]{32}')->middleware('throttle:admin-invitation-accept')->name('invitations.accept');
+
     Route::middleware('guest:admin')->group(function () {
         Route::get('/login', [AdminController::class, 'login'])->name('login');
         Route::post('/login', [AdminController::class, 'authenticate'])->middleware('throttle:admin-login')->name('login.store');
@@ -90,6 +95,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/invitations', [AdminController::class, 'requestInvitation'])->name('invitations.store');
         Route::post('/invitations/{requestItem}/approve', [AdminController::class, 'approveInvitation'])->name('invitations.approve');
         Route::post('/invitations/{requestItem}/reject', [AdminController::class, 'rejectInvitation'])->name('invitations.reject');
+        Route::post('/invitations/{requestItem}/resend', [AdminController::class, 'resendInvitation'])
+            ->middleware('throttle:admin-invitation-resend')->name('invitations.resend');
+        Route::post('/invitations/{requestItem}/revoke', [AdminController::class, 'revokeInvitation'])->name('invitations.revoke');
     });
 });
 
