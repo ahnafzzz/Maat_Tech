@@ -1,8 +1,11 @@
-# Application hardening review — through Step 15
+# Application hardening review — reconciled through Step 16
 
-Review date: 2026-09-09  
-Reviewed branch: `codex/production-hardening`  
+Review date: 2026-09-10
+Reviewed branch: `codex/production-hardening`
 Baseline review commit: `0f96842968bbb4845a106c9bb90fd0626ddaacab`
+
+Final reviewed application code: `c3aa8af8e97b6898ab6a213e7ff3172f40a2f0b8`
+Final consolidated handoff: [`deployment/FINAL_HARDENING_REVIEW.md`](FINAL_HARDENING_REVIEW.md)
 
 Step 12 starting checkpoint: `d83a1e4a59d82a7f284c7b84949e40069dcd5cac`
 
@@ -25,6 +28,8 @@ Step 13 independently printed an effective SQLite `:memory:` database configurat
 Step 14 began at the stated checkpoint with local `HEAD` equal to `origin/codex/production-hardening` after a fetch (ahead 0, behind 0). Its migration rehearsal used a newly created disposable SQLite file containing only synthetic old-schema rows; application tests used SQLite `:memory:`, array cache/session/mail, and the synchronous queue. No persistent database, real customer, or external service was used. The focused cart/migration/checkout/auth runs passed **68 tests / 418 assertions** in aggregate, and the full isolated suite passed **139 tests / 1,082 assertions**. These sequential results do not establish production-engine lock behavior.
 
 Step 15 began at the stated checkpoint with a clean tracked worktree and only the preserved untracked lamp-viewer file. The effective test configuration was printed as `testing`, SQLite `:memory:`, array cache/session/mail, and synchronous queue. Fake public storage and synthetic records were used; no real catalog, filesystem, account, or external service was touched. The focused product/authorization/publication/order/checkout set passed **75 tests / 591 assertions**, the invitation regression check passed **12 tests / 154 assertions**, and the full isolated suite passed **155 tests / 1,243 assertions**.
+
+Step 16 fetched `origin` without changing local history and observed local `HEAD` and `origin/codex/production-hardening` at the exact final code SHA above (ahead 0, behind 0). [Release Verification run 34334028727](https://github.com/ahnafzzz/Maat_Tech/actions/runs/34334028727) is the completed, successful push run for that exact SHA (attempt 1, 2026-09-09 09:19–09:20 UTC). All six jobs succeeded. Step 16 reviewed the current implementation and the complete delta from pre-hardening baseline `b2e479b7760dab22a05284556f00659d2191dcfb`; it did not rerun broad local tests because exact-commit CI and the Step 15 isolated run already resolved the reviewed interactions.
 
 ## Current disposition of the original findings
 
@@ -106,7 +111,7 @@ The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eig
 
 ## Application fixes needed before launch
 
-No additional confirmed application-code vulnerability remains in the bounded Step 10 backlog after Steps 11–15. This is not a claim that the application is risk-free: the production-engine and hosting prerequisites below remain open, and the next checkpoint must perform the final review rather than starting another feature implementation without new evidence.
+No additional confirmed application-code defect was found in the bounded Step 10 backlog or the Step 16 cross-boundary review after Steps 11–15. This is not a claim that the application has zero vulnerabilities or is production-ready: the production-engine and hosting prerequisites below remain open. See the final handoff for the reviewed interactions, exact evidence, launch blockers, and acceptance decisions.
 
 ## Production-engine concurrency and migration checks
 
@@ -123,11 +128,11 @@ These checks cannot be closed by the current in-memory SQLite suite. After choos
 These are deferred until a platform, database engine, and topology are selected; none is assumed here.
 
 1. Ensure every chosen web server refuses script execution and script-source download anywhere under the public upload URL. The container Apache path is verified. The repository's Nginx sample has a general `location ~ \.php$` handler but no `/storage` denial (`deployment/nginx/maattech.com.conf:53-75`), and the generic cPanel path depends on host-controlled Apache/PHP handler behavior. Add and test an explicit upload-location deny before using either path; also enforce `nosniff` and allow only intended media response types.
-2. Confirm the document root is only `laravel-app/public`, persistent storage links/volumes survive releases, upload permissions are narrow, upload/body limits match the application, and source, environment, database, backup, and temporary files are unreachable over HTTP.
+2. Confirm the document root is only `laravel-app/public`, persistent storage links/volumes survive releases, upload permissions are narrow, and source, environment, database, backup, and temporary files are unreachable over HTTP. Reconcile the Nginx sample's 20 MiB body limit with the application-supported 100 MiB video limit (including multipart overhead) before using that path.
 3. Configure HTTPS termination, exact trusted proxy CIDRs (if any), secure cookies, host preservation, request limits, logs/alerts, graceful shutdown, and writer quiesce/resume for the selected topology.
 4. Choose the database engine/version and rehearse the repository deployment path on a disposable host. Validate transactional-table requirements, migration duration/locks, maintenance behavior, health gates, and failure recovery.
 5. Configure protected backup capacity, encryption, retention, monitoring, and off-host copies. Restore a database **and** uploaded media/configuration into an isolated environment, verify integrity and application reads, measure recovery time/data loss, and record the operator procedure. Archive creation or listing alone is not a restore rehearsal.
 
 ## Recommended next single checkpoint
 
-Perform the **final application-hardening review**: inspect the exact Step 15 CI result, reconcile this bounded backlog against current code, and produce the launch/no-launch evidence summary. Do not begin another feature checkpoint unless that review confirms a concrete application defect. Production-engine concurrency/migration exercises and hosting/restore rehearsals remain separate prerequisites after the relevant platform choices are made.
+The planned application implementation sequence is complete. Continue ordinary development from the reviewed SHA, but do not authorize production release until the launch blockers and acceptance decisions in [`FINAL_HARDENING_REVIEW.md`](FINAL_HARDENING_REVIEW.md) are closed with evidence. No additional hardening feature checkpoint is recommended without a newly confirmed defect.
