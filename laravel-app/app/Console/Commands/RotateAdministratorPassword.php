@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Admin;
+use App\Models\AdminTwoFactorChallenge;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -62,6 +63,13 @@ class RotateAdministratorPassword extends Command
                 'remember_token' => Str::random(60),
                 'session_version' => Str::random(64),
             ])->save();
+            AdminTwoFactorChallenge::where('admin_id', $admin->id)
+                ->where('status', AdminTwoFactorChallenge::STATUS_PENDING)
+                ->update([
+                    'status' => AdminTwoFactorChallenge::STATUS_INVALIDATED,
+                    'code_hash' => '',
+                    'invalidated_at' => now(),
+                ]);
         }, 3);
 
         $this->components->info('The administrator password was rotated. Older admin sessions will be rejected on their next protected request.');

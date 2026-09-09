@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -39,6 +40,11 @@ class Admin extends Authenticatable
     public function invitationRequests()
     {
         return $this->hasMany(AdminInvitationRequest::class, 'requested_by_admin_id');
+    }
+
+    public function twoFactorChallenges(): HasMany
+    {
+        return $this->hasMany(AdminTwoFactorChallenge::class);
     }
 
     public function isActive(): bool

@@ -77,7 +77,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/login', [AdminController::class, 'login'])->name('login');
         Route::post('/login', [AdminController::class, 'authenticate'])->middleware('throttle:admin-login')->name('login.store');
         Route::get('/two-factor', [AdminController::class, 'showTwoFactorChallenge'])->name('two-factor.challenge');
-        Route::post('/two-factor', [AdminController::class, 'verifyTwoFactorChallenge'])->middleware('throttle:admin-login')->name('two-factor.verify');
+        Route::post('/two-factor', [AdminController::class, 'verifyTwoFactorChallenge'])->middleware('throttle:admin-two-factor')->name('two-factor.verify');
     });
 
     Route::middleware('admin.auth')->group(function () {

@@ -11,6 +11,7 @@ use App\Notifications\AdminInvitationNotification;
 use App\Notifications\AdminTwoFactorCodeNotification;
 use App\Services\AdminInvitationService;
 use App\Services\AdminSessionVersion;
+use App\Services\AdminTwoFactorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -31,6 +32,7 @@ class AdminController extends Controller
     public function __construct(
         private readonly AdminSessionVersion $sessionVersion,
         private readonly AdminInvitationService $invitationService,
+        private readonly AdminTwoFactorService $twoFactorService,
     ) {}
 
     public function login(): View
@@ -52,20 +54,45 @@ class AdminController extends Controller
         }
 
         if ($admin->two_factor_enabled) {
-            $plainCode = (string) random_int(100000, 999999);
-
-            $admin->forceFill([
-                'two_factor_code' => Hash::make($plainCode),
-                'two_factor_expires_at' => now()->addMinutes(10),
-            ])->save();
-
             try {
-                $admin->notify(new AdminTwoFactorCodeNotification($plainCode));
+                $created = $this->twoFactorService->createChallenge(
+                    $admin,
+                    $validated['password'],
+                    $request->session()->get(AdminTwoFactorService::PENDING_SELECTOR_KEY),
+                    $request->session()->get(AdminTwoFactorService::PENDING_BINDING_KEY),
+                );
             } catch (Throwable) {
-                return back()->withErrors(['admin_id' => 'Unable to dispatch the two-factor code. Check mail configuration and try again.'])->onlyInput('admin_id');
+                return back()->withErrors(['admin_id' => 'Unable to start two-factor verification. Try again.'])->onlyInput('admin_id');
             }
 
-            $request->session()->put('pending_admin_id', $admin->id);
+            if ($created['status'] === 'rate_limited') {
+                return back()->withErrors(['admin_id' => 'Too many verification challenges were requested for this administrator. Try again later.'])->onlyInput('admin_id');
+            }
+
+            if ($created['status'] !== 'created') {
+                return back()->withErrors(['admin_id' => 'Invalid Admin ID or password.'])->onlyInput('admin_id');
+            }
+
+            try {
+                $created['admin']->notify(new AdminTwoFactorCodeNotification($created['code']));
+                $this->twoFactorService->markDelivered($created['challenge']);
+            } catch (Throwable) {
+                try {
+                    $this->twoFactorService->markDeliveryFailed($created['challenge']);
+                } catch (Throwable) {
+                    // Without delivered_at, a challenge is unusable even if cleanup fails.
+                }
+
+                $this->clearPendingTwoFactor($request);
+
+                return back()->withErrors(['admin_id' => 'Unable to deliver the two-factor code. Try signing in again.'])->onlyInput('admin_id');
+            }
+
+            $request->session()->regenerate();
+            $request->session()->put([
+                AdminTwoFactorService::PENDING_SELECTOR_KEY => $created['challenge']->selector,
+                AdminTwoFactorService::PENDING_BINDING_KEY => $created['binding'],
+            ]);
 
             return redirect()->route('admin.two-factor.challenge')->with('status', 'Verification code sent to your admin email.');
         }
@@ -84,38 +111,51 @@ class AdminController extends Controller
         return redirect()->route('admin.login');
     }
 
-    public function showTwoFactorChallenge(Request $request): View|RedirectResponse
+    public function showTwoFactorChallenge(Request $request): Response|RedirectResponse
     {
-        if (! $request->session()->has('pending_admin_id')) {
-            return redirect()->route('admin.login');
+        $state = $this->twoFactorService->inspect(
+            $request->session()->get(AdminTwoFactorService::PENDING_SELECTOR_KEY),
+            $request->session()->get(AdminTwoFactorService::PENDING_BINDING_KEY),
+        );
+
+        if ($state !== 'pending') {
+            $this->clearPendingTwoFactor($request);
+
+            return redirect()->route('admin.login')->withErrors(['admin_id' => $this->challengeRecoveryMessage($state)]);
         }
 
-        return view('admin.two-factor');
+        return response()->view('admin.two-factor')->withHeaders([
+            'Cache-Control' => 'no-store, private',
+            'Referrer-Policy' => 'no-referrer',
+        ]);
     }
 
     public function verifyTwoFactorChallenge(Request $request): RedirectResponse
     {
-        $request->validate([
-            'code' => ['required', 'digits:6'],
-        ]);
+        $result = $this->twoFactorService->verify(
+            $request->session()->get(AdminTwoFactorService::PENDING_SELECTOR_KEY),
+            $request->session()->get(AdminTwoFactorService::PENDING_BINDING_KEY),
+            $request->input('code'),
+        );
 
-        $adminId = $request->session()->get('pending_admin_id');
-        $admin = $adminId ? Admin::find($adminId) : null;
+        if ($result['status'] === 'verified') {
+            $this->clearPendingTwoFactor($request);
+            $this->completeAuthentication($request, $result['admin']);
 
-        if (! $admin || ! $admin->two_factor_enabled || ! $admin->two_factor_code || ! $admin->two_factor_expires_at || now()->greaterThan($admin->two_factor_expires_at) || ! Hash::check($request->string('code')->toString(), $admin->two_factor_code)) {
-            return back()->withErrors(['code' => 'Invalid or expired verification code.']);
+            return redirect()->intended(route('admin.dashboard'))->with('status', 'Two-factor verification complete.');
         }
 
-        $admin->forceFill([
-            'two_factor_code' => null,
-            'two_factor_expires_at' => null,
-            'last_login_at' => now(),
-        ])->save();
+        if (in_array($result['status'], ['incorrect', 'malformed'], true)) {
+            $message = $result['status'] === 'malformed'
+                ? 'Enter a six-digit verification code. This attempt was counted.'
+                : 'The verification code was not accepted.';
 
-        $request->session()->forget('pending_admin_id');
-        $this->completeAuthentication($request, $admin);
+            return back()->withErrors(['code' => $message.' '.$result['remaining_attempts'].' attempts remain.']);
+        }
 
-        return redirect()->intended(route('admin.dashboard'))->with('status', 'Two-factor verification complete.');
+        $this->clearPendingTwoFactor($request);
+
+        return redirect()->route('admin.login')->withErrors(['admin_id' => $this->challengeRecoveryMessage($result['status'])]);
     }
 
     public function toggleTwoFactor(Request $request): RedirectResponse
@@ -123,11 +163,7 @@ class AdminController extends Controller
         $admin = Auth::guard('admin')->user();
         abort_unless($admin, 403);
 
-        $admin->forceFill([
-            'two_factor_enabled' => ! $admin->two_factor_enabled,
-            'two_factor_code' => null,
-            'two_factor_expires_at' => null,
-        ])->save();
+        $admin = $this->twoFactorService->toggle($admin);
 
         return back()->with('status', $admin->two_factor_enabled ? 'Admin two-factor authentication enabled.' : 'Admin two-factor authentication disabled.');
     }
@@ -416,6 +452,12 @@ class AdminController extends Controller
 
     private function completeAuthentication(Request $request, Admin $admin): void
     {
+        $this->twoFactorService->supersedeBound(
+            $request->session()->get(AdminTwoFactorService::PENDING_SELECTOR_KEY),
+            $request->session()->get(AdminTwoFactorService::PENDING_BINDING_KEY),
+        );
+        $this->clearPendingTwoFactor($request);
+
         if (! $admin->session_version) {
             $admin->forceFill(['session_version' => Str::random(64)])->save();
         }
@@ -424,6 +466,26 @@ class AdminController extends Controller
         $request->session()->regenerate();
         $this->sessionVersion->establish($request, $admin);
         $admin->update(['last_login_at' => now()]);
+    }
+
+    private function clearPendingTwoFactor(Request $request): void
+    {
+        $request->session()->forget([
+            AdminTwoFactorService::PENDING_SELECTOR_KEY,
+            AdminTwoFactorService::PENDING_BINDING_KEY,
+            'pending_admin_id',
+        ]);
+    }
+
+    private function challengeRecoveryMessage(string $state): string
+    {
+        return match ($state) {
+            'expired' => 'The verification challenge expired. Sign in again to request a new code.',
+            'exhausted' => 'The verification challenge reached its attempt limit. Sign in again to restart verification.',
+            'consumed' => 'That verification challenge was already used. Sign in again if you still need access.',
+            'superseded' => 'That verification challenge was replaced by a newer sign-in from this browser.',
+            default => 'The verification challenge is no longer available. Sign in again to restart verification.',
+        };
     }
 
     private function syncProductMedia(Request $request, Product $product): void

@@ -21,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('auth', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
         RateLimiter::for('admin-login', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+        RateLimiter::for('admin-two-factor', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('admin-invitation-accept', fn (Request $request) => Limit::perMinute(5)
             ->by((string) $request->route('selector').'|'.$request->ip()));
         RateLimiter::for('admin-invitation-resend', fn (Request $request) => Limit::perHour(3)

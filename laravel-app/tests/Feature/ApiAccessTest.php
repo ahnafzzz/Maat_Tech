@@ -9,11 +9,12 @@ use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
+use App\Notifications\AdminTwoFactorCodeNotification;
 use App\Services\AdminSessionVersion;
 use Illuminate\Console\Command;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -198,14 +199,19 @@ class ApiAccessTest extends TestCase
     {
         $product = $this->product();
         $admin = $this->admin(true);
-        $admin->forceFill([
-            'two_factor_enabled' => true,
-            'two_factor_code' => Hash::make('123456'),
-            'two_factor_expires_at' => now()->addMinutes(10),
-        ])->save();
+        $admin->forceFill(['two_factor_enabled' => true])->save();
+        Notification::fake();
 
-        $this->withSession(['pending_admin_id' => $admin->id])
-            ->post('/admin/two-factor', ['code' => '123456'])
+        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => 'test-password'])
+            ->assertRedirect(route('admin.two-factor.challenge'));
+        $code = null;
+        Notification::assertSentTo($admin, AdminTwoFactorCodeNotification::class, function ($notification) use ($admin, &$code): bool {
+            $code = $notification->toMail($admin)->introLines[1] ?? null;
+
+            return is_string($code);
+        });
+
+        $this->post('/admin/two-factor', ['code' => $code])
             ->assertRedirect(route('admin.dashboard'));
         $this->assertSame($admin->session_version, session(AdminSessionVersion::SESSION_KEY));
 
