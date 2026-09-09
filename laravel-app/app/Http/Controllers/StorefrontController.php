@@ -7,15 +7,21 @@ use App\Models\Product;
 use App\Models\Wishlist;
 use App\Models\WishlistItem;
 use App\Services\CheckoutService;
+use App\Services\GuestMergeIdentity;
 use App\Services\SessionCartService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class StorefrontController extends Controller
 {
-    public function __construct(private readonly SessionCartService $cartService, private readonly CheckoutService $checkoutService) {}
+    public function __construct(
+        private readonly SessionCartService $cartService,
+        private readonly CheckoutService $checkoutService,
+        private readonly GuestMergeIdentity $guestMergeIdentity,
+    ) {}
 
     public function cart(Request $request): View
     {
@@ -163,23 +169,34 @@ class StorefrontController extends Controller
     {
         $productId = (int) $product;
 
-        if ($request->user()) {
-            $wishlist = Wishlist::where('user_id', $request->user()->id)->first();
-            $item = $wishlist ? WishlistItem::where(['wishlist_id' => $wishlist->id, 'product_id' => $productId])->first() : null;
+        if ($customer = $request->user('web')) {
+            $result = DB::transaction(function () use ($customer, $productId): array {
+                $lockedCustomer = $customer->newQuery()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
+                $wishlist = Wishlist::where('user_id', $lockedCustomer->id)->orderBy('id')->lockForUpdate()->first();
+                $item = $wishlist ? WishlistItem::where(['wishlist_id' => $wishlist->id, 'product_id' => $productId])->lockForUpdate()->first() : null;
 
-            if ($item) {
-                $item->delete();
+                if ($item) {
+                    $item->delete();
 
+                    return ['removed' => true];
+                }
+
+                $publishedProduct = Product::published()->whereKey($productId)->lockForUpdate()->firstOrFail();
+                $wishlist ??= Wishlist::create(['user_id' => $lockedCustomer->id, 'session_id' => null]);
+                WishlistItem::firstOrCreate(['wishlist_id' => $wishlist->id, 'product_id' => $publishedProduct->id]);
+
+                return ['removed' => false, 'product' => $publishedProduct];
+            }, 3);
+
+            if ($result['removed']) {
                 return back()->with('status', 'Item removed from wishlist.');
             }
-
-            $publishedProduct = Product::published()->findOrFail($productId);
-            $wishlist ??= Wishlist::firstOrCreate(['user_id' => $request->user()->id], ['session_id' => null]);
-            WishlistItem::firstOrCreate(['wishlist_id' => $wishlist->id, 'product_id' => $publishedProduct->id]);
+            $publishedProduct = $result['product'];
         } else {
             $wishlist = $request->session()->get('wishlist', []);
             if (in_array($productId, $wishlist)) {
                 $request->session()->put('wishlist', array_values(array_diff($wishlist, [$productId])));
+                $this->guestMergeIdentity->markChanged($request);
 
                 return back()->with('status', 'Item removed from wishlist.');
             }
@@ -187,6 +204,7 @@ class StorefrontController extends Controller
             $publishedProduct = Product::published()->findOrFail($productId);
             $wishlist = [...$wishlist, $publishedProduct->id];
             $request->session()->put('wishlist', $wishlist);
+            $this->guestMergeIdentity->markChanged($request);
         }
 
         return back()->with('status', $publishedProduct->name.' added to wishlist.');

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Admin;
 use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\Product;
@@ -31,14 +32,12 @@ class CartCheckoutConsistencyTest extends TestCase
         return User::factory()->create(array_merge(['phone' => '01700000000'], $attributes));
     }
 
-    private function duplicateCart(User $user, Product $product, int $first = 2, int $second = 3): array
+    private function cart(User $user, Product $product, int $quantity = 2): Cart
     {
-        $firstCart = Cart::create(['user_id' => $user->id]);
-        $secondCart = Cart::create(['user_id' => $user->id]);
-        $firstCart->items()->create(['product_id' => $product->id, 'quantity' => $first]);
-        $secondCart->items()->create(['product_id' => $product->id, 'quantity' => $second]);
+        $cart = Cart::create(['user_id' => $user->id]);
+        $cart->items()->create(['product_id' => $product->id, 'quantity' => $quantity]);
 
-        return [$firstCart, $secondCart];
+        return $cart;
     }
 
     private function checkoutPayload(): array
@@ -54,14 +53,13 @@ class CartCheckoutConsistencyTest extends TestCase
         ], $shippingOverrides)];
     }
 
-    public function test_duplicate_cart_update_matches_preview_and_checkout_and_preserves_other_customer(): void
+    public function test_cart_update_matches_preview_and_checkout_and_preserves_other_customer(): void
     {
         $customer = $this->user();
         $other = $this->user(['email' => 'other@example.test', 'phone' => '01800000000']);
         $product = $this->product();
-        $this->duplicateCart($customer, $product);
-        $otherCart = Cart::create(['user_id' => $other->id]);
-        $otherCart->items()->create(['product_id' => $product->id, 'quantity' => 4]);
+        $this->cart($customer, $product, 5);
+        $otherCart = $this->cart($other, $product, 4);
 
         $this->actingAs($customer, 'web')->get('/cart')->assertOk()->assertSee('value="5"', false);
         $this->get('/checkout')->assertOk()->assertViewHas('subtotal', '450.00');
@@ -73,11 +71,11 @@ class CartCheckoutConsistencyTest extends TestCase
         $this->assertDatabaseHas('cart_items', ['cart_id' => $otherCart->id, 'quantity' => 4]);
     }
 
-    public function test_duplicate_cart_remove_removes_all_owned_rows_and_checkout_sees_empty_cart(): void
+    public function test_cart_remove_deletes_the_owned_product_and_checkout_sees_empty_cart(): void
     {
         $customer = $this->user();
         $product = $this->product();
-        $this->duplicateCart($customer, $product);
+        $this->cart($customer, $product, 5);
 
         $this->actingAs($customer, 'web')->post('/cart/remove/'.$product->id)->assertRedirect();
         $this->assertDatabaseMissing('cart_items', ['product_id' => $product->id]);
@@ -85,45 +83,50 @@ class CartCheckoutConsistencyTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
     }
 
-    public function test_duplicate_cart_add_uses_aggregate_quantity_and_stock_limit(): void
+    public function test_repeated_cart_add_uses_one_item_and_respects_stock_limit(): void
     {
         $customer = $this->user();
         $product = $this->product(['stock' => 6]);
-        $this->duplicateCart($customer, $product);
+        $this->cart($customer, $product, 5);
 
         $this->actingAs($customer, 'web')->post('/cart/add/'.$product->id, ['quantity' => 4])->assertRedirect();
+        $this->post('/cart/add/'.$product->id, ['quantity' => 1])->assertRedirect();
+        $this->assertSame(1, Cart::where('user_id', $customer->id)->count());
+        $this->assertSame(1, CartItem::count());
         $this->get('/cart')->assertOk()->assertSee('value="6"', false);
         $this->post('/checkout', $this->checkoutPayload())->assertRedirect(route('orders.index'));
         $this->assertDatabaseHas('order_items', ['order_id' => Order::firstOrFail()->id, 'quantity' => 6]);
     }
 
-    public function test_owned_api_item_deletion_remains_row_specific(): void
+    public function test_owned_api_item_deletion_preserves_another_customers_item(): void
     {
         $customer = $this->user();
         $product = $this->product();
-        [$firstCart, $secondCart] = $this->duplicateCart($customer, $product);
+        $firstCart = $this->cart($customer, $product, 2);
+        $other = $this->user(['email' => 'api-other@example.test', 'phone' => '01800000000']);
+        $otherCart = $this->cart($other, $product, 3);
         $firstItem = $firstCart->items()->firstOrFail();
 
         $this->actingAs($customer, 'web')->deleteJson('/api/cart/'.$firstItem->id)->assertOk();
         $this->assertDatabaseMissing('cart_items', ['id' => $firstItem->id]);
-        $this->assertDatabaseHas('cart_items', ['cart_id' => $secondCart->id, 'product_id' => $product->id, 'quantity' => 3]);
+        $this->assertDatabaseHas('cart_items', ['cart_id' => $otherCart->id, 'product_id' => $product->id, 'quantity' => 3]);
     }
 
-    public function test_api_add_and_login_merge_use_the_aggregate_customer_cart_scope(): void
+    public function test_api_add_and_login_merge_preserve_the_unique_customer_cart_scope(): void
     {
         $customer = $this->user(['email' => 'merge@example.test']);
         $product = $this->product(['stock' => 9]);
-        $this->duplicateCart($customer, $product);
+        $this->cart($customer, $product, 5);
 
         $this->actingAs($customer, 'web')->postJson('/api/cart', ['product_id' => $product->id, 'quantity' => 2])->assertOk();
-        $this->assertSame(7, Cart::where('user_id', $customer->id)->with('items')->get()->sum(fn (Cart $cart) => $cart->items->sum('quantity')));
+        $this->assertSame(7, Cart::where('user_id', $customer->id)->firstOrFail()->items()->sum('quantity'));
         $this->assertDatabaseCount('cart_items', 1);
 
         $request = Request::create('/login', 'POST');
         $request->setLaravelSession($this->app['session']->driver());
         $request->session()->put('cart', [$product->id => 4]);
         $this->app->make(CartMergeService::class)->merge($request, $customer);
-        $this->assertSame(9, Cart::where('user_id', $customer->id)->with('items')->get()->sum(fn (Cart $cart) => $cart->items->sum('quantity')));
+        $this->assertSame(9, Cart::where('user_id', $customer->id)->firstOrFail()->items()->sum('quantity'));
         $this->assertDatabaseCount('cart_items', 1);
         $this->assertFalse($request->session()->has('cart'));
     }
@@ -140,7 +143,7 @@ class CartCheckoutConsistencyTest extends TestCase
         $customer = $this->user();
         $admin = Admin::create(['admin_id' => 'ADM-1234-X', 'name' => 'Admin', 'email' => 'admin@example.test',
             'password' => 'password', 'status' => 'active']);
-        $this->duplicateCart($customer, $product, 1, 1);
+        $this->cart($customer, $product, 2);
         if (in_array($identity, ['customer', 'both'])) {
             $this->actingAs($customer, 'web');
         }
@@ -164,7 +167,7 @@ class CartCheckoutConsistencyTest extends TestCase
     {
         $customer = $this->user();
         $product = $this->product();
-        $this->duplicateCart($customer, $product, 1, 1);
+        $this->cart($customer, $product, 2);
         $admin = Admin::create(['admin_id' => 'ADM-1234-X', 'name' => 'Admin', 'email' => 'admin@example.test',
             'password' => 'password', 'status' => 'active']);
 

@@ -222,7 +222,7 @@ class ApiAccessTest extends TestCase
 
     private function item(User $user, Product $product): CartItem
     {
-        $cart = Cart::create(['user_id' => $user->id]);
+        $cart = Cart::firstOrCreate(['user_id' => $user->id]);
 
         return $cart->items()->create(['product_id' => $product->id, 'quantity' => 2]);
     }

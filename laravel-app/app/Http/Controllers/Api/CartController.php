@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
-use App\Models\CartItem;
 use App\Models\Product;
 use App\Services\SessionCartService;
 use Illuminate\Http\Request;
@@ -16,18 +15,23 @@ class CartController extends Controller
     public function index(Request $request)
     {
         $customer = $request->user('web');
-        $cart = Cart::firstOrCreate(['user_id' => $customer->id], ['session_id' => null]);
-        $items = CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $customer->id))
-            ->with(['product' => fn ($query) => $query->published()])->orderBy('id')->get()
-            ->map(fn (CartItem $item) => [
-                'id' => $item->id,
-                'product_id' => $item->product_id,
-                'quantity' => $item->quantity,
-                'available' => $item->product !== null,
-                'product' => $item->product,
-            ]);
+        $cart = Cart::where('user_id', $customer->id)->with([
+            'items' => fn ($query) => $query->with(['product' => fn ($productQuery) => $productQuery->published()])->orderBy('id'),
+        ])->first();
+        $items = collect($cart?->items)->map(fn ($item) => [
+            'id' => $item->id,
+            'product_id' => $item->product_id,
+            'quantity' => $item->quantity,
+            'available' => $item->product !== null,
+            'product' => $item->product,
+        ]);
 
-        return response()->json([...$cart->toArray(), 'items' => $items]);
+        return response()->json([
+            'id' => $cart?->id,
+            'user_id' => $customer->id,
+            'session_id' => null,
+            'items' => $items,
+        ]);
     }
 
     public function store(Request $request)
@@ -46,8 +50,7 @@ class CartController extends Controller
 
     public function destroy(Request $request, string $id)
     {
-        CartItem::whereHas('cart', fn ($query) => $query->where('user_id', $request->user('web')->id))
-            ->findOrFail($id)->delete();
+        $this->cartService->removeItemForCustomer($request->user('web'), (int) $id);
 
         return response()->json(['message' => 'Item removed']);
     }

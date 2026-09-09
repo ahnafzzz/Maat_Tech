@@ -1,4 +1,4 @@
-# Application hardening review — through Step 13
+# Application hardening review — through Step 14
 
 Review date: 2026-09-09  
 Reviewed branch: `codex/production-hardening`  
@@ -7,6 +7,8 @@ Baseline review commit: `0f96842968bbb4845a106c9bb90fd0626ddaacab`
 Step 12 starting checkpoint: `d83a1e4a59d82a7f284c7b84949e40069dcd5cac`
 
 Step 13 starting checkpoint: `cd0d4fdf958ea04d3408caf3cd42eafa3a8d5b11`
+
+Step 14 starting checkpoint: `4756694e7188e74c3e8ff1c18f7f8a5620dd6844`
 
 ## Checkpoint and verification evidence
 
@@ -18,13 +20,14 @@ The baseline review verification was run only after forcing and printing `APP_EN
 
 Step 13 independently printed an effective SQLite `:memory:` database configuration with an empty `DB_URL`, then used the same isolated array mail/cache/session and synchronous queue settings. The focused challenge suite passed **12 tests / 128 assertions** and the full suite passed **127 tests / 989 assertions**. `npm run build` completed successfully. Codes were observed only through Laravel's notification fake; the failure test used an injected local notification dispatcher, and no real mail or account was used.
 
+Step 14 began at the stated checkpoint with local `HEAD` equal to `origin/codex/production-hardening` after a fetch (ahead 0, behind 0). Its migration rehearsal used a newly created disposable SQLite file containing only synthetic old-schema rows; application tests used SQLite `:memory:`, array cache/session/mail, and the synchronous queue. No persistent database, real customer, or external service was used. The focused cart/migration/checkout/auth runs passed **68 tests / 418 assertions** in aggregate, and the full isolated suite passed **139 tests / 1,082 assertions**. These sequential results do not establish production-engine lock behavior.
+
 ## Current disposition of the original findings
 
 | Area | Disposition | Current evidence |
 | --- | --- | --- |
 | Checkout transaction and authorization | Resolved in current code | Web and API orders both call `CheckoutService::checkout` (`StorefrontController.php:96-102`; `Api/OrderController.php:69-75`). Attempt creation, cart/product locks, stock decrement, order creation, cart deletion, and attempt completion share one retried transaction (`CheckoutService.php:73-175`). Order reads are customer/session scoped (`StorefrontController.php:127-135`; `Api/OrderController.php:16-26`). Existing rollback, ownership, idempotency, and inactive-product tests pass. |
-| Cart duplicate tolerance | Resolved as a compatibility behavior, not as an invariant | Reads aggregate duplicate rows and mutations lock and collapse them (`SessionCartService.php:47-77,105-128`); checkout locks and aggregates every customer cart (`CheckoutService.php:246-261`). Existing duplicate-cart tests pass. |
-| Cart creation/item uniqueness and login merge | **Unresolved** | Neither `carts.user_id` nor `(cart_id, product_id)` has a unique constraint (`2026_07_14_054522_create_carts_table.php:14-19`; `2026_07_14_054524_create_cart_items_table.php:14-20`). Locking an empty cart query cannot serialize two first-cart creators, and API cart reads also call `firstOrCreate` without a database invariant (`Api/CartController.php:16-23`). Login merge commits each product separately and clears the session only after cart and wishlist loops (`CartMergeService.php:15-27`), so a stale/missing later product can leave earlier additions committed while retaining the entire guest cart for a duplicating retry. |
+| Cart creation/item uniqueness and login merge | **Resolved at the application boundary in Step 14; production-engine migration/race verification remains** | The additive migration consolidates duplicate customer carts and repeated product rows before adding unique keys on `carts.user_id` and `(cart_id, product_id)`; normal mutation, merge, wishlist, and checkout paths lock the stable customer row first (`2026_09_09_020000_enforce_cart_uniqueness_and_track_merges.php`; `SessionCartService.php`; `CartMergeService.php`; `CheckoutService.php`). A captured cart/wishlist snapshot is applied in one transaction, completion is recorded under a stable merge identity, and cleanup removes only captured session content. Focused tests prove deterministic consolidation, rollback, sequential replay safety, snapshot-aware cleanup, login/registration integration, ownership, and checkout regressions on SQLite. |
 | Invitation authorization | Resolved | Request creation remains available to active authenticated administrators. Approval, rejection, resend, and revocation require `admin.auth` and recheck active lead status inside their transaction (`routes/web.php`; `AdminInvitationService.php`). Recipient acceptance is public only through a secret-bearing invitation and never grants lead status. |
 | Invitation lifecycle/onboarding | **Resolved at the application boundary in Step 12; production-engine race verification remains** | Pending decisions and acceptance use transactions with row locks and explicit allowed states. Approval creates no account: it records fixed non-lead permissions and a hashed, expiring, single-use secret. Acceptance atomically creates the intended active operator and consumes the invitation; identity conflicts do not overwrite an account. Resend rotates the selector/secret after commit and revocation invalidates it. Focused sequential and migration tests pass; SQLite is not evidence of production-engine locking behavior. |
 | 2FA challenge and pending-session lifecycle | **Resolved at the application boundary in Step 13; production-engine race verification remains** | Each login now creates a separate hashed-code challenge bound to a hashed browser-session secret and the administrator credential version (`AdminTwoFactorService.php`; `2026_09_09_010000_create_admin_two_factor_challenges_table.php`). A transaction locks the administrator then challenge for inspection/attempt/consume, malformed and incorrect submissions share the five-attempt limit, successful use clears the hash and records `consumed`, and expiry/exhaustion/supersession/deactivation/password rotation lead to terminal states and pending-session cleanup. Independent browsers retain independent challenges. Focused SQLite tests cover lifecycle behavior and sequential replay; only a two-connection selected-engine race can close concurrency verification. |
@@ -44,6 +47,19 @@ Step 13 independently printed an effective SQLite `:memory:` database configurat
 - **Remaining limitation:** product media lives on the public filesystem. A previously learned direct `/storage/...` URL can remain reachable after a product is unpublished; preventing that requires a separately designed private/signed-media lifecycle or removal policy. Application catalog/cart/wishlist routes no longer disclose those paths for unpublished products.
 
 The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eight focused visibility tests (117 assertions). The frontend production build also completed. These results do not change the production-engine concurrency limitations below.
+
+## Resolved cart integrity checkpoint
+
+### Unique carts/items and retry-safe login merging — resolved in Step 14
+
+- The additive migration keeps the lowest cart ID for each customer. For every product, it keeps the lowest matching item already in that canonical cart when possible (otherwise the lowest item ID), sums all duplicate quantities exactly, moves the keeper to the canonical cart, and deletes the redundant rows/carts. Duplicate item rows in anonymous carts are also summed, while separate nullable-owner carts remain separate. It does not inspect stock, clamp quantity, touch orders, or alter product inventory.
+- Every legacy quantity must be a positive integer and every consolidated sum must fit the signed 32-bit quantity column. Invalid or overflowing data stops with an actionable exception before consolidation. The disposable old-schema rehearsal verifies quantities, canonical ownership, anonymous-cart handling, foreign-key cascades, both named unique indexes, rejected duplicates, and a no-op repeated migration command.
+- Customer cart mutation locks the stable `users` row before finding or creating the cart, then locks the cart, relevant item rows, and product. Expected cart/item unique conflicts receive a bounded retry; unrelated database errors are rethrown. API cart GET no longer creates a cart.
+- Authenticated checkout and wishlist writes use the same customer-row serialization point. The effective same-customer order is user, operation attempt (merge/checkout where applicable), cart, cart items, wishlist/items (merge), then products in ascending ID order. Different-customer multi-product operations also lock products in ascending order.
+- Registration captures and validates the guest snapshot first, then creates the account and applies all cart/wishlist changes in one outer transaction. A database failure rolls back the account and all merge changes. Login merge failure logs the newly authenticated customer back out, preserves the guest session, and rethrows the original error.
+- A 256-bit session merge identity and canonical snapshot fingerprint back each non-empty merge. The identity is globally single-use and bound to the first customer that consumes it. `cart_merge_attempts` records completion in the same transaction as all cart/wishlist changes, so replay after database commit but before session cleanup does not add quantities twice or transfer the same snapshot to another account. Deleted or unpublished records are skipped consistently. Cleanup subtracts/removes only the captured snapshot, preserving quantities and IDs added afterward; guest mutations rotate the identity.
+- Focused SQLite tests cover migration consolidation/failure, one-cart/one-item normal mutations, later-item rollback, commit-before-cleanup replay, cross-account reuse rejection, post-capture additions, unpublished/deleted products, successful and failed login/registration integration, non-mutating API reads, ownership/guard behavior, and checkout/idempotent replay regressions. The focused runs passed **68 tests / 418 assertions** in aggregate; the full isolated suite passed **139 tests / 1,082 assertions**.
+- **Remaining limitations:** SQLite tests are sequential. The selected production engine must still verify two-connection first-cart, same-item, merge-versus-mutation, and merge-versus-checkout races and its exact unique/deadlock error classification. The constraint migration must be rehearsed with representative volume while writes are quiesced because DDL transaction/locking behavior is engine-specific. Overlapping requests also depend on the selected session store's locking semantics; the application cleanup is snapshot-aware, but it cannot prevent an external session backend from resolving concurrent writes by last-writer-wins. Completed merge rows currently have no automated retention policy; choose a retention window longer than the maximum retry/session lifetime before pruning them.
 
 ## Resolved administrator invitation checkpoint
 
@@ -73,15 +89,7 @@ The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eig
 
 ## Ordered application fixes still needed before launch
 
-### 1. Establish cart invariants and all-or-nothing login merge — Medium
-
-- **Consequence:** Concurrent first use can create duplicate carts/items. Current aggregation masks many duplicates, but increases race/maintenance complexity. A failed multi-item login merge can commit early items, retain the guest cart, and add those items again on retry (bounded by stock but customer-visible).
-- **Affected operations:** `GET|POST /api/cart`, web cart add/update/remove, customer registration/login merge, authenticated checkout cart loading.
-- **Evidence/reproduction:** The two initial cart migrations have no relevant unique keys; `SessionCartService.php:107-128` locks only rows already found; `CartMergeService.php:15-27` has no outer transaction. For the merge failure, place a valid product before a deleted ID in a disposable guest session and invoke merge: the first item commits before `findOrFail` aborts, and session clearing is not reached.
-- **Smallest fix:** Migrate existing duplicates deterministically, add one-cart-per-customer and `(cart_id, product_id)` unique constraints, serialize first creation (for example by locking the customer row), handle expected unique violations, and transact the database portion of a prevalidated cart/wishlist merge before clearing only the merged session snapshot.
-- **Verification:** Migration tests with duplicate fixtures; rollback test for a stale guest product; two real database connections for first-cart and same-product races; then re-run duplicate compatibility, checkout, and ownership tests.
-
-### 2. Unify authorized product-write validation — Medium
+### 1. Unify authorized product-write validation — Medium
 
 - **Consequence:** A valid administrator can create/update catalog data through the API without the web route's status, bounds, discount, string-length, or media consistency rules, causing invalid catalog state or engine-specific errors.
 - **Affected operations:** `POST|PUT /api/products/{id?}`.
@@ -93,8 +101,8 @@ The Step 11 isolated SQLite run passed 102 tests (697 assertions), including eig
 
 These checks cannot be closed by the current in-memory SQLite suite. After choosing the engine/version, use a disposable database with production isolation settings and at least two independent connections:
 
-1. Run the cart cleanup/constraint migration against fixtures containing multiple carts per user and repeated product rows; verify quantities, foreign keys, indexes, rollback behavior, and an upgrade from the pre-fix schema.
-2. Race first-cart creation, same-product add/update, login merge versus cart mutation/checkout, and confirm no lost update, duplicate invariant, deadlock leak, or double merge. Confirm the chosen retry strategy recognizes that engine's unique/deadlock SQL states.
+1. Run the cart cleanup/constraint migration against representative fixtures containing multiple carts per user and repeated product rows while application writes are quiesced; verify quantities, foreign keys, indexes, duration/locking, rollback/recovery behavior, and an upgrade from the pre-fix schema.
+2. Race first-cart creation, same-product add/update, and login merge versus cart mutation/checkout; confirm no lost update, duplicate invariant, deadlock leak, or double merge. Confirm the chosen retry strategy recognizes that engine's unique/deadlock SQL states. Exercise overlapping guest-session mutations against the selected session backend and confirm its locking behavior preserves post-snapshot additions.
 3. Race invitation approve/approve, approve/reject, resend/accept, and accept/accept; exactly one incompatible transition or token consumer must succeed. Race two 2FA consumes against the same delivered challenge and verify exactly one reaches authenticated-session establishment. SQLite sequential replay is not concurrent evidence.
 4. Re-run checkout stock/idempotency races on the selected engine. Current transaction structure and SQLite tests are strong evidence, but the repository has only sequential stock competition and no two-connection production-engine result.
 5. Apply the complete migration chain to an empty database and a disposable copy of representative pre-hardening data, then run `deployment:preflight` and the full suite without external services.
@@ -111,4 +119,4 @@ These are deferred until a platform, database engine, and topology are selected;
 
 ## Recommended next single checkpoint
 
-Implement **cart uniqueness invariants and an all-or-nothing login merge** (remaining application backlog item 1). Keep that checkpoint separate from product-write validation and hosting work.
+Unify **authorized product-write validation and media lifecycle behavior** across the administrator web and API paths (remaining application backlog item 1). Keep that checkpoint separate from hosting and deployment work.

@@ -84,8 +84,7 @@ class CheckoutTest extends TestCase
         $customer = $this->user();
         $other = $this->user(['email' => 'other@example.test', 'phone' => '01800000000']);
         $product = $this->product();
-        $ownCart = $this->cartItem($customer, $product, 1);
-        $secondOwnCart = $this->cartItem($customer, $product, 2);
+        $ownCart = $this->cartItem($customer, $product, 3);
         $otherCart = $this->cartItem($other, $product, 4);
 
         $this->actingAs($customer, 'web')->get('/checkout')->assertOk()->assertViewHas('subtotal', '270.00');
@@ -97,7 +96,6 @@ class CheckoutTest extends TestCase
         $this->assertSame('270.00', $order->subtotal);
         $this->assertSame('140.00', $order->shipping_fee);
         $this->assertDatabaseMissing('cart_items', ['cart_id' => $ownCart->id]);
-        $this->assertDatabaseMissing('cart_items', ['cart_id' => $secondOwnCart->id]);
         $this->assertDatabaseHas('cart_items', ['cart_id' => $otherCart->id, 'quantity' => 4]);
         $this->assertDatabaseHas('products', ['id' => $product->id, 'stock' => 7]);
     }

@@ -7,8 +7,9 @@ use App\Services\CartMergeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Throwable;
 
 class CustomerAuthController extends Controller
 {
@@ -25,10 +26,17 @@ class CustomerAuthController extends Controller
             'password' => ['required', 'confirmed', 'min:8'],
         ]);
 
-        $user = User::create($validated);
+        $mergeSnapshot = $cartMergeService->capture($request);
+        $user = DB::transaction(function () use ($cartMergeService, $mergeSnapshot, $validated): User {
+            $user = User::create($validated);
+            $cartMergeService->applySnapshot($user, $mergeSnapshot);
+
+            return $user;
+        }, 3);
+
         Auth::login($user);
         $request->session()->regenerate();
-        $cartMergeService->merge($request, $user);
+        $cartMergeService->cleanupSnapshot($request, $mergeSnapshot);
 
         return redirect()->route('dashboard')->with('status', 'Account created. Your guest cart and wishlist were merged.');
     }
@@ -49,8 +57,16 @@ class CustomerAuthController extends Controller
             return back()->withErrors(['email' => 'The supplied credentials are not valid.'])->onlyInput('email');
         }
 
-        $request->session()->regenerate();
-        $cartMergeService->merge($request, $request->user());
+        try {
+            $mergeSnapshot = $cartMergeService->capture($request);
+            $cartMergeService->applySnapshot($request->user(), $mergeSnapshot);
+            $request->session()->regenerate();
+            $cartMergeService->cleanupSnapshot($request, $mergeSnapshot);
+        } catch (Throwable $exception) {
+            Auth::logout();
+
+            throw $exception;
+        }
 
         return redirect()->intended(route('dashboard'))->with('status', 'Signed in successfully.');
     }

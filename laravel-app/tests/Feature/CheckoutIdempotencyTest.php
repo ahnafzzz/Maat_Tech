@@ -40,7 +40,7 @@ class CheckoutIdempotencyTest extends TestCase
 
     private function cart(User $customer, Product $product, int $quantity = 1): Cart
     {
-        $cart = Cart::create(['user_id' => $customer->id]);
+        $cart = Cart::firstOrCreate(['user_id' => $customer->id]);
         $cart->items()->create(['product_id' => $product->id, 'quantity' => $quantity]);
 
         return $cart;

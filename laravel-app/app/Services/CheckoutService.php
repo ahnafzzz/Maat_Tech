@@ -80,6 +80,10 @@ class CheckoutService
                 $ownerIdentifier,
                 $fingerprint
             ): CheckoutResult {
+                if ($customer) {
+                    User::whereKey($customer->id)->lockForUpdate()->firstOrFail();
+                }
+
                 $existing = CheckoutAttempt::where([
                     'owner_type' => $ownerType,
                     'owner_identifier' => $ownerIdentifier,
@@ -245,17 +249,17 @@ class CheckoutService
 
     private function lockedCustomerCart(User $customer): array
     {
-        $carts = Cart::where('user_id', $customer->id)->orderBy('id')->lockForUpdate()->get();
-        if ($carts->isEmpty()) {
+        $cart = Cart::where('user_id', $customer->id)->lockForUpdate()->first();
+        if (! $cart) {
             return [[], []];
         }
-        $items = CartItem::whereIn('cart_id', $carts->pluck('id'))->orderBy('product_id')->orderBy('id')->lockForUpdate()->get();
+        $items = CartItem::where('cart_id', $cart->id)->orderBy('product_id')->lockForUpdate()->get();
         $quantities = [];
         foreach ($items as $item) {
             if (! is_int($item->quantity) || $item->quantity <= 0) {
                 throw ValidationException::withMessages(['cart' => 'Cart quantities must be positive whole numbers.']);
             }
-            $quantities[$item->product_id] = ($quantities[$item->product_id] ?? 0) + $item->quantity;
+            $quantities[$item->product_id] = $item->quantity;
         }
 
         return [$quantities, $items->pluck('id')->all()];
