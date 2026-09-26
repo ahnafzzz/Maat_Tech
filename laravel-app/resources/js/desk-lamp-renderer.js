@@ -1,0 +1,443 @@
+const degrees = (value) => value * Math.PI / 180;
+const add = (a, b) => a.map((value, index) => value + b[index]);
+const subtract = (a, b) => a.map((value, index) => value - b[index]);
+const multiply = (value, scalar) => value.map((item) => item * scalar);
+const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
+const cross = (a, b) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+];
+const normalize = (value) => multiply(value, 1 / Math.max(Math.hypot(...value), 1e-9));
+const direction = (angle) => [Math.cos(degrees(angle)), 0, Math.sin(degrees(angle))];
+const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+function multiplyMatrices(a, b) {
+    const result = Array(16).fill(0);
+    for (let column = 0; column < 4; column += 1) {
+        for (let row = 0; row < 4; row += 1) {
+            for (let index = 0; index < 4; index += 1) {
+                result[column * 4 + row] += a[index * 4 + row] * b[column * 4 + index];
+            }
+        }
+    }
+
+    return result;
+}
+
+function translate(value) {
+    const matrix = identity();
+    [matrix[12], matrix[13], matrix[14]] = value;
+
+    return matrix;
+}
+
+function rotateY(angle) {
+    const cosine = Math.cos(degrees(angle));
+    const sine = Math.sin(degrees(angle));
+
+    return [cosine, 0, -sine, 0, 0, 1, 0, 0, sine, 0, cosine, 0, 0, 0, 0, 1];
+}
+
+function rotateX(angle) {
+    const cosine = Math.cos(degrees(angle));
+    const sine = Math.sin(degrees(angle));
+
+    return [1, 0, 0, 0, 0, cosine, sine, 0, 0, -sine, cosine, 0, 0, 0, 0, 1];
+}
+
+function rotateZ(angle) {
+    const cosine = Math.cos(degrees(angle));
+    const sine = Math.sin(degrees(angle));
+
+    return [cosine, sine, 0, 0, -sine, cosine, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+}
+
+const transformPoint = (matrix, point) => [
+    matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12],
+    matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13],
+    matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14],
+];
+const move = (from, to, angle = 0) => multiplyMatrices(translate(to), multiplyMatrices(rotateY(-angle), translate(multiply(from, -1))));
+
+function springMap(fromStart, fromEnd, toStart, toEnd) {
+    const sourceDirection = normalize(subtract(fromEnd, fromStart));
+    const targetDirection = normalize(subtract(toEnd, toStart));
+    const angle = Math.atan2(targetDirection[2], targetDirection[0]) - Math.atan2(sourceDirection[2], sourceDirection[0]);
+    const ratio = Math.hypot(...subtract(toEnd, toStart)) / Math.hypot(...subtract(fromEnd, fromStart));
+    const stretch = identity();
+
+    for (let row = 0; row < 3; row += 1) {
+        for (let column = 0; column < 3; column += 1) {
+            stretch[column * 4 + row] += (ratio - 1) * sourceDirection[row] * sourceDirection[column];
+        }
+    }
+
+    return multiplyMatrices(
+        translate(toStart),
+        multiplyMatrices(rotateY(-angle * 180 / Math.PI), multiplyMatrices(stretch, translate(multiply(fromStart, -1)))),
+    );
+}
+
+function compileShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(shader) || 'The showcase shader could not be compiled.');
+    }
+
+    return shader;
+}
+
+function createProgram(gl) {
+    const program = gl.createProgram();
+    gl.attachShader(program, compileShader(gl, gl.VERTEX_SHADER, `
+        attribute vec3 position;
+        attribute vec3 surfaceNormal;
+        uniform mat4 viewProjection;
+        uniform mat4 model;
+        varying vec3 normal;
+        void main() {
+            normal = mat3(model) * surfaceNormal;
+            gl_Position = viewProjection * model * vec4(position, 1.0);
+        }
+    `));
+    gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        varying vec3 normal;
+        uniform vec3 color;
+        uniform float glow;
+        void main() {
+            vec3 normalized = normalize(normal);
+            float key = abs(dot(normalized, normalize(vec3(-0.4, -0.7, 1.0))));
+            float fill = abs(dot(normalized, normalize(vec3(0.7, 0.4, 0.3))));
+            vec3 shaded = color * (0.48 + 0.6 * key + 0.2 * fill) + vec3(pow(key, 30.0) * 0.025);
+            shaded = mix(shaded, color, glow);
+            gl_FragColor = vec4(pow(max(shaded, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+        }
+    `));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(program) || 'The showcase shader program could not be linked.');
+    }
+
+    return program;
+}
+
+async function fetchWithTimeout(url, signal, timeout = 20000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('The 3D asset request timed out.')), timeout);
+    const abort = () => controller.abort(signal?.reason);
+    signal?.addEventListener('abort', abort, { once: true });
+
+    try {
+        const response = await fetch(url, { signal: controller.signal, credentials: 'same-origin' });
+        if (!response.ok) throw new Error(`The 3D asset returned HTTP ${response.status}.`);
+
+        return response;
+    } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+    }
+}
+
+export function shouldAnimate({ active, documentVisible, reducedMotion }) {
+    return active && documentVisible && !reducedMotion;
+}
+
+export class DeskLampShowcaseRenderer {
+    constructor(canvas, manifest, vertices, callbacks = {}) {
+        this.canvas = canvas;
+        this.manifest = manifest;
+        this.vertices = vertices;
+        this.callbacks = callbacks;
+        this.active = false;
+        this.documentVisible = !document.hidden;
+        this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.frame = null;
+        this.lastFrameTime = null;
+        this.cameraYaw = manifest.defaultCamera.yaw;
+        this.cameraElevation = manifest.defaultCamera.elevation;
+        this.target = manifest.defaultCamera.target;
+        this.scale = manifest.defaultCamera.scale;
+        this.firstFrameDrawn = false;
+        this.destroyed = false;
+        this.state = manifest.defaultPose;
+        this.profile = manifest.profiles.showcase;
+        this.parts = manifest.parts.map((part) => ({ ...part }));
+        this.gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+
+        if (!this.gl) throw new Error('WebGL is unavailable.');
+
+        this.onContextLost = (event) => {
+            event.preventDefault();
+            this.pause();
+            this.callbacks.onError?.(new Error('The WebGL context was lost.'));
+        };
+        canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+        this.prepareParts();
+        this.prepareGraphics();
+        this.updateTransforms();
+        this.fit();
+        this.resizeObserver = new ResizeObserver(() => this.requestDraw());
+        this.resizeObserver.observe(canvas);
+        this.requestDraw();
+    }
+
+    static async create(canvas, manifestUrl, callbacks = {}, signal) {
+        const manifestResponse = await fetchWithTimeout(manifestUrl, signal);
+        const manifest = await manifestResponse.json();
+        const binaryUrl = new URL(manifest.buffer.url, manifestResponse.url || manifestUrl);
+        const binaryResponse = await fetchWithTimeout(binaryUrl, signal);
+        const binary = await binaryResponse.arrayBuffer();
+
+        if (binary.byteLength !== manifest.buffer.bytes || binary.byteLength % manifest.buffer.strideBytes !== 0) {
+            throw new Error('The 3D vertex buffer failed its size validation.');
+        }
+
+        return new DeskLampShowcaseRenderer(canvas, manifest, new Float32Array(binary), callbacks);
+    }
+
+    prepareParts() {
+        for (const part of this.parts) {
+            const low = [Infinity, Infinity, Infinity];
+            const high = [-Infinity, -Infinity, -Infinity];
+            for (let index = part.start * 6; index < (part.start + part.count) * 6; index += 6) {
+                for (let axis = 0; axis < 3; axis += 1) {
+                    low[axis] = Math.min(low[axis], this.vertices[index + axis]);
+                    high[axis] = Math.max(high[axis], this.vertices[index + axis]);
+                }
+            }
+            part.low = low;
+            part.high = high;
+            part.middle = multiply(add(low, high), 0.5);
+        }
+    }
+
+    prepareGraphics() {
+        const gl = this.gl;
+        this.program = createProgram(gl);
+        gl.useProgram(this.program);
+        this.locations = {
+            viewProjection: gl.getUniformLocation(this.program, 'viewProjection'),
+            model: gl.getUniformLocation(this.program, 'model'),
+            color: gl.getUniformLocation(this.program, 'color'),
+            glow: gl.getUniformLocation(this.program, 'glow'),
+            position: gl.getAttribLocation(this.program, 'position'),
+            normal: gl.getAttribLocation(this.program, 'surfaceNormal'),
+        };
+        this.buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this.vertices, gl.STATIC_DRAW);
+        gl.enable(gl.DEPTH_TEST);
+        gl.enableVertexAttribArray(this.locations.position);
+        gl.enableVertexAttribArray(this.locations.normal);
+        gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 24, 12);
+    }
+
+    anchors() {
+        const pivots = this.manifest.pivots;
+        const end = add(pivots.A, multiply(direction(this.state.lower), 0.3302));
+        const upperStart = add(end, subtract(pivots.S, pivots.B));
+        const innerStart = add(end, subtract(pivots.T, pivots.B));
+        const headStart = add(upperStart, multiply(direction(this.state.upper), 0.3302));
+
+        return {
+            end,
+            upperStart,
+            innerStart,
+            headStart,
+            headInner: add(innerStart, multiply(direction(this.state.upper), 0.3302)),
+            headPivot: add(headStart, subtract(pivots.H, pivots.C)),
+            lowerSpring: add(pivots.A1, multiply(direction(this.state.lower), 0.148)),
+            upperSpring: add(innerStart, multiply(direction(this.state.upper), 0.160)),
+            base: rotateZ(this.state.baseYaw),
+        };
+    }
+
+    localMatrix(part, anchors) {
+        const pivots = this.manifest.pivots;
+        const name = part.name;
+
+        if (name.startsWith('Clamp.')) {
+            return /screw|cut_thread|pad_swivel|pressure_disc|rubber_disc|T_boss|sliding_handle|handle_ball/.test(name)
+                ? translate([0, 0, -(this.state.jaw - 25.1) / 1000])
+                : identity();
+        }
+        if (part.role === 'fixed') return identity();
+        if (name === 'Lower.outer') return move(pivots.A, pivots.A, this.state.lower - 118);
+        if (name === 'Lower.inner') return move(pivots.A1, pivots.A1, this.state.lower - 118);
+        if (name === 'Upper.outer') return move(pivots.S, anchors.upperStart, this.state.upper - 47);
+        if (name === 'Upper.inner') return move(pivots.T, anchors.innerStart, this.state.upper - 47);
+        if (name.startsWith('Lower.spring_crosspin')) return translate(subtract(anchors.lowerSpring, add(pivots.A1, multiply(direction(118), 0.148))));
+        if (name.startsWith('Upper.spring_crosspin')) return translate(subtract(anchors.upperSpring, add(pivots.T, multiply(direction(47), 0.160))));
+
+        if (part.category === 'springs') {
+            const lower = name.startsWith('Lower.');
+            const sourceStart = lower ? add(pivots.A, [0.031, 0, 0.020]) : pivots.S;
+            const sourceEnd = lower ? add(pivots.A1, multiply(direction(118), 0.148)) : add(pivots.T, multiply(direction(47), 0.160));
+            const targetStart = lower ? sourceStart : anchors.upperStart;
+            const targetEnd = lower ? anchors.lowerSpring : anchors.upperSpring;
+            const angle = (Math.atan2(targetEnd[2] - targetStart[2], targetEnd[0] - targetStart[0])
+                - Math.atan2(sourceEnd[2] - sourceStart[2], sourceEnd[0] - sourceStart[0])) * 180 / Math.PI;
+
+            if (name.includes('root_eye')) return move(sourceStart, targetStart, angle);
+            if (name.includes('tip_eye')) return move(sourceEnd, targetEnd, angle);
+
+            return springMap(sourceStart, sourceEnd, targetStart, targetEnd);
+        }
+
+        if (name.startsWith('Head.')) {
+            if (/fork_plate|rail_pivot|tilt_lock/.test(name)) return translate(subtract(anchors.headStart, pivots.C));
+            let rotation = rotateY(-this.state.tilt);
+            if (!/laminated|black_swivel/.test(name)) rotation = multiplyMatrices(rotation, rotateX(this.state.roll + 25));
+
+            return multiplyMatrices(translate(anchors.headPivot), multiplyMatrices(rotation, translate(multiply(pivots.H, -1))));
+        }
+        if (name.startsWith('Elbow.')) return translate(subtract(anchors.end, pivots.B));
+
+        return identity();
+    }
+
+    updateTransforms() {
+        const anchors = this.anchors();
+        this.matrices = this.parts.map((part) => {
+            let matrix = this.localMatrix(part, anchors);
+            if (part.role !== 'clamp' && part.role !== 'fixed') matrix = multiplyMatrices(anchors.base, matrix);
+
+            return matrix;
+        });
+    }
+
+    isVisible(part) {
+        return !this.profile.hiddenPartPrefixes.some((prefix) => part.name.startsWith(prefix));
+    }
+
+    fit() {
+        const points = [];
+        this.parts.forEach((part, index) => {
+            if (!this.isVisible(part)) return;
+            for (const x of [part.low[0], part.high[0]]) {
+                for (const y of [part.low[1], part.high[1]]) {
+                    for (const z of [part.low[2], part.high[2]]) points.push(transformPoint(this.matrices[index], [x, y, z]));
+                }
+            }
+        });
+        const low = [0, 1, 2].map((axis) => Math.min(...points.map((point) => point[axis])));
+        const high = [0, 1, 2].map((axis) => Math.max(...points.map((point) => point[axis])));
+        this.target = multiply(add(low, high), 0.5);
+        this.scale = Math.max(0.055, Math.hypot(...subtract(high, low)) * 0.56);
+    }
+
+    viewProjection() {
+        const eye = add(this.target, [
+            2 * Math.cos(this.cameraElevation) * Math.cos(this.cameraYaw),
+            2 * Math.cos(this.cameraElevation) * Math.sin(this.cameraYaw),
+            2 * Math.sin(this.cameraElevation),
+        ]);
+        const z = normalize(subtract(eye, this.target));
+        const x = normalize(cross([0, 0, 1], z));
+        const y = cross(z, x);
+        const view = [
+            x[0], y[0], z[0], 0,
+            x[1], y[1], z[1], 0,
+            x[2], y[2], z[2], 0,
+            -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
+        ];
+        let height = this.scale;
+        let width = height * this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
+        if (width < height * 0.78) {
+            height *= height * 0.78 / width;
+            width = this.scale * 0.78;
+        }
+        const projection = [1 / width, 0, 0, 0, 0, 1 / height, 0, 0, 0, 0, -0.2, 0, 0, 0, -1, 1];
+
+        return multiplyMatrices(projection, view);
+    }
+
+    draw(time = performance.now()) {
+        if (this.destroyed) return;
+        const gl = this.gl;
+        const deviceScale = Math.min(window.devicePixelRatio || 1, 1.7);
+        const width = Math.max(1, Math.round(this.canvas.clientWidth * deviceScale));
+        const height = Math.max(1, Math.round(this.canvas.clientHeight * deviceScale));
+        if (this.canvas.width !== width || this.canvas.height !== height) {
+            this.canvas.width = width;
+            this.canvas.height = height;
+        }
+
+        if (this.lastFrameTime !== null && shouldAnimate(this)) {
+            this.cameraYaw += Math.min(time - this.lastFrameTime, 50) * 0.00016;
+        }
+        this.lastFrameTime = time;
+        gl.viewport(0, 0, width, height);
+        gl.clearColor(0.035, 0.051, 0.071, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(this.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+        gl.uniformMatrix4fv(this.locations.viewProjection, false, this.viewProjection());
+
+        this.parts.forEach((part, index) => {
+            if (!this.isVisible(part)) return;
+            let color = part.color;
+            let glow = 0;
+            if (part.emissive) {
+                color = multiply([0.74, 0.82, 0.95], 0.2 + 0.08 * this.state.brightness);
+                glow = 1;
+            }
+            gl.uniformMatrix4fv(this.locations.model, false, this.matrices[index]);
+            gl.uniform3fv(this.locations.color, color);
+            gl.uniform1f(this.locations.glow, glow);
+            gl.drawArrays(gl.TRIANGLES, part.start, part.count);
+        });
+
+        if (!this.firstFrameDrawn) {
+            this.firstFrameDrawn = true;
+            this.callbacks.onFirstFrame?.();
+        }
+
+        if (shouldAnimate(this)) this.frame = requestAnimationFrame((nextTime) => this.draw(nextTime));
+        else this.frame = null;
+    }
+
+    requestDraw() {
+        if (this.destroyed || this.frame !== null) return;
+        this.frame = requestAnimationFrame((time) => this.draw(time));
+    }
+
+    setActive(active) {
+        this.active = active;
+        this.lastFrameTime = null;
+        if (shouldAnimate(this)) this.requestDraw();
+        else this.pause();
+    }
+
+    setDocumentVisible(visible) {
+        this.documentVisible = visible;
+        this.setActive(this.active);
+    }
+
+    setReducedMotion(reducedMotion) {
+        this.reducedMotion = reducedMotion;
+        this.setActive(this.active);
+        this.requestDraw();
+    }
+
+    pause() {
+        if (this.frame !== null) cancelAnimationFrame(this.frame);
+        this.frame = null;
+    }
+
+    destroy() {
+        if (this.destroyed) return;
+        this.destroyed = true;
+        this.pause();
+        this.resizeObserver?.disconnect();
+        this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+        this.gl.deleteBuffer(this.buffer);
+        this.gl.deleteProgram(this.program);
+        this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+}

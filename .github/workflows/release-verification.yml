@@ -2,7 +2,7 @@ name: Release Verification
 
 on:
   push:
-    branches: ["codex/production-hardening"]
+    branches: ["codex/production-hardening", "codex/storefront-3d"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -102,6 +102,9 @@ jobs:
       - name: Build production frontend
         working-directory: laravel-app
         run: npm run build
+      - name: Run showcase lifecycle unit tests
+        working-directory: laravel-app
+        run: npm run test:showcase
       - name: Verify Vite artifacts
         run: |
           test -s laravel-app/public/build/manifest.json
