@@ -4,6 +4,17 @@ Review date: 2026-09-10
 Branch: `codex/production-hardening`
 Pre-hardening baseline: `b2e479b7760dab22a05284556f00659d2191dcfb`
 Reviewed application code: `c3aa8af8e97b6898ab6a213e7ff3172f40a2f0b8`
+Migration-correction baseline: `67cd9304d8a6ef9a0ed4092b2d5dd8980c7a25e5`
+
+## Migration-name compatibility correction
+
+A post-review audit found one confirmed upgrade defect in commit `2f7ae1b`: four migration files were renamed without body changes after their original filenames could already have been recorded in deployed migration ledgers. Laravel compares the ledger to filenames, so a synthetic SQLite copy using the original names reproduced `table "categories" already exists` before any later migration could run. A consistent `VACUUM INTO` snapshot of the reported development SQLite ledger confirmed the original category, orders, order-items, and initial cart-items names. The cart migration also has an intermediate alias from commit `4a31ae9`; both verified historical cart names map to the same current file.
+
+The correction adds `deployment:reconcile-migration-aliases`, invoked by the maintained SSH deployment immediately before `migrate`. It validates all observed alias states and the expected table columns, unique indexes, and foreign keys before atomically replacing only verified original names with current names. Existing migration row IDs and batch numbers are retained. Fresh/current ledgers are no-ops; mixtures across the four pairs are reconciled; duplicate aliases, untracked aliased tables, and schema/ledger mismatches fail without partial reconciliation. The exact mapping and operator procedure are documented in `DEPLOYMENT_RUNBOOK.md`.
+
+Disposable SQLite regression fixtures cover a fresh database, all-original names (including reproduction before correction), the intermediate cart alias, all-current names, mixed names, duplicate aliases, schema mismatch, representative commerce data, unique/foreign-key behavior, full migration completion, preserved batches, and an idempotent second run. The reported development database was inspected only through a consistent disposable backup; no development or production database was migrated or edited.
+
+Local correction verification used SQLite `:memory:`, array cache/session/mail, and a synchronous queue. The focused migration/deployment group passed **14 tests / 180 assertions**; the full Laravel suite passed **162 tests / 1,366 assertions**. Scoped PHP syntax, Pint, shell syntax, deployment safety fixtures, and whitespace checks passed. A live `composer audit --locked` completed successfully on 2026-09-26 with no advisory findings at that time. Exact-SHA deployment-free CI remains to be inspected after publishing the correction commit; no CI result is claimed in advance.
 
 ## Readiness assessment
 

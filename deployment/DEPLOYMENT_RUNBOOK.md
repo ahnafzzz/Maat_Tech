@@ -45,7 +45,7 @@ First installation is deliberately separate from routine deployment:
 2. Place `.env` manually with restrictive permissions and reviewed production values.
 3. Generate `APP_KEY` exactly once if it is absent. Record it in the approved secret-management/backup system. Never regenerate it after encrypted data, cookies, or credentials exist.
 4. For Docker, mount persistent `storage` and, when using SQLite, `/data`; supply configuration through the platform secret mechanism. Set SQLite `DB_DATABASE` to a file under `/data`.
-5. Install dependencies and build assets in a staging workspace. Initialize the empty database with `php artisan migrate --force`, create the public storage link, and explicitly run `php artisan db:seed --force` only if catalog initialization is intended.
+5. Install dependencies and build assets in a staging workspace. Run `php artisan deployment:reconcile-migration-aliases --no-interaction` before `php artisan migrate --force`; on a genuinely empty database the reconciliation is a validated no-op. Create the public storage link, and explicitly run `php artisan db:seed --force` only if catalog initialization is intended.
 6. Run `php artisan deployment:preflight`, verify `/up`, configure monitoring, and complete a disposable restore drill before enabling automated deployment.
 7. Create the first administrator or remediate historical credentials using the commands documented in `laravel-app/README.md`.
 
@@ -66,10 +66,35 @@ The workflow and `deploy-laravel.sh` perform this sequence:
 5. Enter maintenance mode and quiesce background writers.
 6. Create a database-engine-specific backup in a new protected directory, then create and validate a separate application-code archive.
 7. Synchronize code while excluding `.env`, all of `storage`, `public/storage`, and SQLite database/WAL/SHM/journal files. Repeat deployments preserve those paths. Obsolete application code is removed.
-8. Verify key release files, run migrations, rebuild Laravel caches, restart queue state, and rerun production preflight.
+8. Verify key release files, validate and reconcile the four migration aliases from commit `2f7ae1b`, run migrations, rebuild Laravel caches, restart queue state, and rerun production preflight.
 9. Leave maintenance mode, perform a bounded `/up` check, and resume background writers. Any failed command returns nonzero.
 
 There is no automatic production seeding. Catalog seeding remains an explicit operator action and must not be added to routine deploys or container startup.
+
+### Migration-name compatibility procedure
+
+Commit `2f7ae1b` renamed four migration files without changing their bodies. Laravel records migration filenames, so a database whose ledger contains an original name otherwise treats the renamed file as pending and attempts to recreate an existing table. Before every upgrade from an unknown pre-fix installation, after the verified backup and while writers remain quiesced, run:
+
+```bash
+php artisan deployment:reconcile-migration-aliases --no-interaction
+php artisan migrate --force --no-interaction
+```
+
+The reconciliation command recognizes only these exact aliases:
+
+| Legacy ledger name | Current filename |
+| --- | --- |
+| `2026_07_14_054521_create_categories_table` | `2026_07_14_054520_create_categories_table` |
+| `2026_07_14_054522_create_orders_table` | `2026_07_14_054523_create_orders_table` |
+| `2026_07_14_054522_create_cart_items_table` | `2026_07_14_054524_create_cart_items_table` |
+| `2026_01_03_000000_create_cart_items_table` | `2026_07_14_054524_create_cart_items_table` |
+| `2026_07_14_054522_create_order_items_table` | `2026_07_14_054525_create_order_items_table` |
+
+The cart-items migration has two legacy aliases because commit `4a31ae9` renamed its initial filename to `2026_01_03_000000_create_cart_items_table` before commit `2f7ae1b` renamed it again. The audited SQLite ledger contains the initial name; either historical state is supported.
+
+The command validates required columns, unique indexes, and foreign keys for every recorded alias before making any change. It then changes only verified original names to their current names in one transaction; row IDs and batch numbers remain unchanged. Fresh databases and ledgers already using current names are no-ops. A ledger containing multiple names for one migration identity, duplicate rows, a table without any verified alias, or a recorded alias whose schema does not match fails before reconciliation. Do not manually insert ledger rows or bypass a rejection with `Schema::hasTable`; diagnose the database copy and schema history first.
+
+This is a forward compatibility rewrite. A subsequent rollback uses the current filename and its preserved historical batch. Deploying code older than this correction after reconciliation is unsupported because that code knows only the original names. Several later order-history migrations already prohibit automatic rollback, so recovery after migration begins remains the reviewed forward-fix or verified-restore procedure below.
 
 ## Backup guarantees and limits
 

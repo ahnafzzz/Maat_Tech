@@ -152,6 +152,7 @@ cmp "$SOURCE_APP/composer.lock" "$TARGET_APP/composer.lock"
 cmp "$SOURCE_APP/public/build/manifest.json" "$TARGET_APP/public/build/manifest.json"
 
 PHASE="database migration"
+(cd "$TARGET_APP" && "$PHP_BIN" artisan deployment:reconcile-migration-aliases --no-interaction)
 (cd "$TARGET_APP" && "$PHP_BIN" artisan migrate --force --no-interaction)
 
 PHASE="application cache rebuild"

@@ -67,6 +67,9 @@ case "$*" in
       previous="$argument"
     done
     ;;
+  *"deployment:reconcile-migration-aliases"*)
+    if [ "${FAIL_RECONCILIATION:-0}" = 1 ]; then exit 1; fi
+    ;;
   *"migrate --force"*)
     if [ "${FAIL_MIGRATION:-0}" = 1 ]; then exit 1; fi
     ;;
@@ -135,6 +138,10 @@ if FAIL_BACKUP=1 run_deploy backup-failure; then fail 'failed backup was accepte
 make_fixture migration-failure
 if FAIL_MIGRATION=1 run_deploy migration-failure; then fail 'failed migration was accepted'; fi
 [ -e "$TEST_STATE/maintenance" ] || fail 'migration failure did not retain maintenance mode'
+
+make_fixture reconciliation-failure
+if FAIL_RECONCILIATION=1 run_deploy reconciliation-failure; then fail 'failed migration reconciliation was accepted'; fi
+[ -e "$TEST_STATE/maintenance" ] || fail 'reconciliation failure did not retain maintenance mode'
 
 make_fixture health-failure
 if FAIL_HEALTH=1 run_deploy health-failure; then fail 'failed health check was accepted'; fi
