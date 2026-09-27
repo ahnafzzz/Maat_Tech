@@ -73,7 +73,7 @@ class HomeController extends Controller
         return view('products', compact('products', 'categories'));
     }
 
-    public function show(string $slug)
+    public function show(string $slug, ProductShowcaseRegistry $showcaseRegistry)
     {
         $product = Product::published()
             ->with(['category', 'reviews' => fn ($query) => $query->approved()->latest()])
@@ -86,7 +86,8 @@ class HomeController extends Controller
             ->where('category_id', $product->category_id)
             ->take(3)
             ->get();
+        $productShowcase = $showcaseRegistry->forProduct($product);
 
-        return view('product', compact('product', 'relatedProducts'));
+        return view('product', compact('product', 'relatedProducts', 'productShowcase'));
     }
 }

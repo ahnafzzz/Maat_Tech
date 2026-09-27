@@ -1,7 +1,10 @@
 import { initializeProductShowcases } from './product-showcase.js';
+import { initializeProductShowrooms } from './product-showroom.js';
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => initializeProductShowcases(), { once: true });
-} else {
+const initialize = () => {
     initializeProductShowcases();
-}
+    initializeProductShowrooms();
+};
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
+else initialize();

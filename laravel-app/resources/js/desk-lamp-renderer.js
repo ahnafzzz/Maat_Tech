@@ -12,6 +12,41 @@ const normalize = (value) => multiply(value, 1 / Math.max(Math.hypot(...value), 
 const direction = (angle) => [Math.cos(degrees(angle)), 0, Math.sin(degrees(angle))];
 const identity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
+export const DESK_LAMP_LIMITS = Object.freeze({
+    lower: [58, 142],
+    upper: [-85, 112],
+    tilt: [-70, 95],
+    roll: [-100, 100],
+    baseYaw: [-170, 170],
+    jaw: [4, 53.3],
+    explode: [0, 100],
+});
+
+export const DESK_LAMP_PRESETS = Object.freeze({
+    study: [118, 47, 0, -25],
+    reach: [77, 10, 0, -10],
+    tall: [72, 96, 0, -20],
+    low: [77, -24, 16, -10],
+    wide: [130, -33, 24, -15],
+    folded: [98, -85, 88, 0],
+});
+
+export const DESK_LAMP_GROUPS = Object.freeze({
+    clamp: { label: 'Clamp & screw', color: [0.28, 0.49, 0.68] },
+    lower: { label: 'Lower linkage', color: [0.32, 0.58, 0.51] },
+    upper: { label: 'Upper linkage', color: [0.47, 0.43, 0.70] },
+    head: { label: 'Light head', color: [0.73, 0.56, 0.30] },
+    springs: { label: 'Tension springs', color: [0.77, 0.40, 0.32] },
+    hardware: { label: 'Pivot hardware', color: [0.54, 0.61, 0.65] },
+    controller: { label: 'Light controller', color: [0.25, 0.57, 0.70] },
+    usb: { label: 'USB connector', color: [0.64, 0.53, 0.40] },
+});
+
+const clamp = (value, [minimum, maximum]) => Math.max(minimum, Math.min(maximum, value));
+const modelCache = new Map();
+
+export const brightnessForLevel = (level) => [2, 4, 6, 8, 10][clamp(Math.round(level), [1, 5]) - 1];
+
 function multiplyMatrices(a, b) {
     const result = Array(16).fill(0);
     for (let column = 0; column < 4; column += 1) {
@@ -92,7 +127,7 @@ function compileShader(gl, type, source) {
 
 function createProgram(gl) {
     const program = gl.createProgram();
-    gl.attachShader(program, compileShader(gl, gl.VERTEX_SHADER, `
+    const vertexShader = compileShader(gl, gl.VERTEX_SHADER, `
         attribute vec3 position;
         attribute vec3 surfaceNormal;
         uniform mat4 viewProjection;
@@ -102,8 +137,8 @@ function createProgram(gl) {
             normal = mat3(model) * surfaceNormal;
             gl_Position = viewProjection * model * vec4(position, 1.0);
         }
-    `));
-    gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, `
+    `);
+    const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, `
         precision mediump float;
         varying vec3 normal;
         uniform vec3 color;
@@ -116,8 +151,12 @@ function createProgram(gl) {
             shaded = mix(shaded, color, glow);
             gl_FragColor = vec4(pow(max(shaded, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         }
-    `));
+    `);
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         throw new Error(gl.getProgramInfoLog(program) || 'The showcase shader program could not be linked.');
     }
@@ -142,12 +181,12 @@ async function fetchWithTimeout(url, signal, timeout = 20000) {
     }
 }
 
-export function shouldAnimate({ active, documentVisible, reducedMotion }) {
-    return active && documentVisible && !reducedMotion;
+export function shouldAnimate({ active, documentVisible, reducedMotion, autoRotate = true }) {
+    return active && documentVisible && !reducedMotion && autoRotate;
 }
 
 export class DeskLampShowcaseRenderer {
-    constructor(canvas, manifest, vertices, callbacks = {}) {
+    constructor(canvas, manifest, vertices, callbacks = {}, options = {}) {
         this.canvas = canvas;
         this.manifest = manifest;
         this.vertices = vertices;
@@ -155,16 +194,25 @@ export class DeskLampShowcaseRenderer {
         this.active = false;
         this.documentVisible = !document.hidden;
         this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.autoRotate = options.autoRotate !== false;
+        this.mode = options.mode ?? 'showcase';
         this.frame = null;
         this.lastFrameTime = null;
         this.cameraYaw = manifest.defaultCamera.yaw;
         this.cameraElevation = manifest.defaultCamera.elevation;
         this.target = manifest.defaultCamera.target;
         this.scale = manifest.defaultCamera.scale;
+        this.zoom = 1;
         this.firstFrameDrawn = false;
         this.destroyed = false;
-        this.state = manifest.defaultPose;
-        this.profile = manifest.profiles.showcase;
+        this.state = {
+            ...manifest.defaultPose,
+            finish: 'black',
+            mode: 'cool',
+            explode: 0,
+            anatomy: false,
+        };
+        this.profile = manifest.profiles[this.mode === 'showroom' ? 'presentation' : 'showcase'];
         this.parts = manifest.parts.map((part) => ({ ...part }));
         this.gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
 
@@ -185,18 +233,34 @@ export class DeskLampShowcaseRenderer {
         this.requestDraw();
     }
 
-    static async create(canvas, manifestUrl, callbacks = {}, signal) {
-        const manifestResponse = await fetchWithTimeout(manifestUrl, signal);
-        const manifest = await manifestResponse.json();
-        const binaryUrl = new URL(manifest.buffer.url, manifestResponse.url || manifestUrl);
-        const binaryResponse = await fetchWithTimeout(binaryUrl, signal);
-        const binary = await binaryResponse.arrayBuffer();
+    static async create(canvas, manifestUrl, callbacks = {}, signal, options = {}) {
+        let modelPromise = modelCache.get(manifestUrl);
+        if (!modelPromise) {
+            modelPromise = (async () => {
+                const manifestResponse = await fetchWithTimeout(manifestUrl);
+                const manifest = await manifestResponse.json();
+                const binaryUrl = new URL(manifest.buffer.url, manifestResponse.url || manifestUrl);
+                const binaryResponse = await fetchWithTimeout(binaryUrl);
+                const binary = await binaryResponse.arrayBuffer();
 
-        if (binary.byteLength !== manifest.buffer.bytes || binary.byteLength % manifest.buffer.strideBytes !== 0) {
-            throw new Error('The 3D vertex buffer failed its size validation.');
+                if (binary.byteLength !== manifest.buffer.bytes || binary.byteLength % manifest.buffer.strideBytes !== 0) {
+                    throw new Error('The 3D vertex buffer failed its size validation.');
+                }
+
+                return { manifest, vertices: new Float32Array(binary) };
+            })().catch((error) => {
+                modelCache.delete(manifestUrl);
+                throw error;
+            });
+            modelCache.set(manifestUrl, modelPromise);
         }
 
-        return new DeskLampShowcaseRenderer(canvas, manifest, new Float32Array(binary), callbacks);
+        const aborted = new Promise((_, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+        const { manifest, vertices } = signal ? await Promise.race([modelPromise, aborted]) : await modelPromise;
+
+        return new DeskLampShowcaseRenderer(canvas, manifest, vertices, callbacks, options);
     }
 
     prepareParts() {
@@ -301,13 +365,40 @@ export class DeskLampShowcaseRenderer {
         return identity();
     }
 
+    explodedOffset(part) {
+        const amount = this.state.explode / 100;
+        const side = part.middle[1] < 0 ? -1 : 1;
+        const name = part.name;
+        let value = part.role === 'lower' ? [-0.09, 0, 0.055]
+            : part.role === 'upper' ? [0.045, 0, 0.10]
+                : part.role === 'head' ? [0.16, 0, 0.17] : [0, 0, 0];
+
+        if (part.category === 'clamp') {
+            value = [-0.045, 0, -0.05];
+            if (/screw|cut_thread|pad_swivel|T_boss|sliding_handle|handle_ball/.test(name)) value = [-0.010, 0, -0.078];
+            if (/pressure_disc|rubber_disc/.test(name)) value = [-0.010, 0, -0.063];
+            if (/lock_stem|lock_washer|six_lobe_knob/.test(name)) value = [-0.070, 0, -0.05];
+        }
+        if (part.category === 'controller') value = [-0.14, 0, 0.015];
+        if (part.category === 'usb') value = [-0.15, 0, -0.07];
+        if (part.category === 'cable') value = [-0.14, 0, 0.015];
+        if (part.category === 'springs') value = add(value, [0, side * 0.065, 0.025]);
+        if (part.category === 'hardware') value = add(value, [0, side * 0.085, 0]);
+        if (/plate/.test(name)) value = add(value, [0, side * 0.036, 0]);
+        if (name.endsWith('inner')) value = add(value, [0, 0.035, 0]);
+        if (name === 'Head.diffuser') value = add(value, [0, -0.05, -0.027]);
+        if (/aluminum_back|sidewall|longitudinal/.test(name)) value = add(value, [0, 0.025, 0.02]);
+
+        return multiply(value, amount);
+    }
+
     updateTransforms() {
         const anchors = this.anchors();
         this.matrices = this.parts.map((part) => {
             let matrix = this.localMatrix(part, anchors);
             if (part.role !== 'clamp' && part.role !== 'fixed') matrix = multiplyMatrices(anchors.base, matrix);
 
-            return matrix;
+            return multiplyMatrices(translate(this.explodedOffset(part)), matrix);
         });
     }
 
@@ -329,6 +420,7 @@ export class DeskLampShowcaseRenderer {
         const high = [0, 1, 2].map((axis) => Math.max(...points.map((point) => point[axis])));
         this.target = multiply(add(low, high), 0.5);
         this.scale = Math.max(0.055, Math.hypot(...subtract(high, low)) * 0.56);
+        this.zoom = 1;
     }
 
     viewProjection() {
@@ -346,11 +438,11 @@ export class DeskLampShowcaseRenderer {
             x[2], y[2], z[2], 0,
             -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
         ];
-        let height = this.scale;
+        let height = this.scale * this.zoom;
         let width = height * this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
         if (width < height * 0.78) {
             height *= height * 0.78 / width;
-            width = this.scale * 0.78;
+            width = this.scale * this.zoom * 0.78;
         }
         const projection = [1 / width, 0, 0, 0, 0, 1 / height, 0, 0, 0, 0, -0.2, 0, 0, 0, -1, 1];
 
@@ -383,15 +475,28 @@ export class DeskLampShowcaseRenderer {
             if (!this.isVisible(part)) return;
             let color = part.color;
             let glow = 0;
+            const group = DESK_LAMP_GROUPS[part.category];
+            const painted = ['clamp', 'lower', 'upper', 'head'].includes(part.category)
+                && Math.max(...part.color) < 0.03
+                && !/knob|rubber|thread|gland|black_swivel|Controller|Cable|USB/.test(part.name);
+            if (this.state.anatomy && group) color = group.color.map((channel) => channel * channel * 0.7);
+            else if (this.state.finish === 'white' && painted) color = [0.72, 0.76, 0.82];
             if (part.emissive) {
-                color = multiply([0.74, 0.82, 0.95], 0.2 + 0.08 * this.state.brightness);
-                glow = 1;
+                color = this.state.mode === 'warm' ? [0.95, 0.55, 0.20]
+                    : this.state.mode === 'neutral' ? [0.88, 0.74, 0.53]
+                        : this.state.mode === 'off' ? [0.42, 0.46, 0.50] : [0.74, 0.82, 0.95];
+                if (this.state.mode !== 'off') {
+                    color = multiply(color, 0.2 + 0.08 * this.state.brightness);
+                    glow = 1;
+                }
             }
             gl.uniformMatrix4fv(this.locations.model, false, this.matrices[index]);
             gl.uniform3fv(this.locations.color, color);
             gl.uniform1f(this.locations.glow, glow);
             gl.drawArrays(gl.TRIANGLES, part.start, part.count);
         });
+
+        this.publishLabels();
 
         if (!this.firstFrameDrawn) {
             this.firstFrameDrawn = true;
@@ -405,6 +510,121 @@ export class DeskLampShowcaseRenderer {
     requestDraw() {
         if (this.destroyed || this.frame !== null) return;
         this.frame = requestAnimationFrame((time) => this.draw(time));
+    }
+
+    publishLabels() {
+        if (!this.callbacks.onLabels) return;
+        if (!this.state.anatomy) {
+            this.callbacks.onLabels([]);
+            return;
+        }
+        const viewProjection = this.viewProjection();
+        const labels = [];
+        for (const [category, group] of Object.entries(DESK_LAMP_GROUPS)) {
+            const points = [];
+            this.parts.forEach((part, index) => {
+                if (part.category === category && this.isVisible(part)) {
+                    points.push(transformPoint(this.matrices[index], part.middle));
+                }
+            });
+            if (!points.length) continue;
+            const anchor = multiply(points.reduce(add, [0, 0, 0]), 1 / points.length);
+            const projected = transformPoint(viewProjection, anchor);
+            labels.push({ category, label: group.label, x: (projected[0] + 1) * 50, y: (1 - projected[1]) * 50 });
+        }
+        this.callbacks.onLabels(labels);
+    }
+
+    stopAutoRotation() {
+        this.autoRotate = false;
+        this.setActive(this.active);
+        this.requestDraw();
+    }
+
+    orbit(deltaX, deltaY) {
+        this.stopAutoRotation();
+        this.cameraYaw -= deltaX * 0.008;
+        this.cameraElevation = clamp(this.cameraElevation + deltaY * 0.008, [-1.45, 1.45]);
+        this.requestDraw();
+    }
+
+    zoomBy(factor) {
+        this.stopAutoRotation();
+        this.zoom = clamp(this.zoom * factor, [0.55, 2.6]);
+        this.requestDraw();
+    }
+
+    setFinish(finish) {
+        this.stopAutoRotation();
+        this.state.finish = finish === 'white' ? 'white' : 'black';
+        this.requestDraw();
+    }
+
+    setLight(mode, level = 5) {
+        this.stopAutoRotation();
+        this.state.mode = ['warm', 'neutral', 'cool', 'off'].includes(mode) ? mode : 'cool';
+        this.state.brightness = brightnessForLevel(level);
+        this.requestDraw();
+    }
+
+    setArticulation(name, value) {
+        if (!(name in DESK_LAMP_LIMITS) || name === 'explode') return;
+        this.stopAutoRotation();
+        this.state[name] = clamp(Number(value), DESK_LAMP_LIMITS[name]);
+        this.updateTransforms();
+        this.requestDraw();
+    }
+
+    setExplode(value) {
+        this.stopAutoRotation();
+        this.state.explode = clamp(Number(value), DESK_LAMP_LIMITS.explode);
+        this.updateTransforms();
+        this.fit();
+        this.requestDraw();
+    }
+
+    setAnatomy(enabled) {
+        this.stopAutoRotation();
+        this.state.anatomy = Boolean(enabled);
+        this.requestDraw();
+    }
+
+    applyPreset(name) {
+        const preset = DESK_LAMP_PRESETS[name];
+        if (!preset) return;
+        this.stopAutoRotation();
+        [this.state.lower, this.state.upper, this.state.tilt, this.state.roll] = preset;
+        this.state.baseYaw = 0;
+        this.state.explode = 0;
+        this.updateTransforms();
+        this.fit();
+        this.requestDraw();
+    }
+
+    resetView() {
+        this.stopAutoRotation();
+        this.state = {
+            ...this.manifest.defaultPose,
+            finish: 'black',
+            mode: 'cool',
+            explode: 0,
+            anatomy: false,
+        };
+        this.cameraYaw = this.manifest.defaultCamera.yaw;
+        this.cameraElevation = this.manifest.defaultCamera.elevation;
+        this.updateTransforms();
+        this.fit();
+        this.requestDraw();
+    }
+
+    snapshot() {
+        return {
+            cameraYaw: this.cameraYaw,
+            cameraElevation: this.cameraElevation,
+            zoom: this.zoom,
+            autoRotate: this.autoRotate,
+            state: { ...this.state },
+        };
     }
 
     setActive(active) {
