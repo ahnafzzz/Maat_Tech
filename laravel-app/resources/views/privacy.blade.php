@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Privacy Policy')
-@section('meta_description', 'Privacy policy for MAAT TECHNOLOGIE BD customer data collection and usage.')
+@section('meta_description', 'Privacy policy for MAAT Technologies BD customer data collection and usage.')
 @section('content')
 <main class="mx-auto max-w-3xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">DATA_POLICY</p>

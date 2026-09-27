@@ -15,8 +15,8 @@
     data-showroom-animation="paused"
     aria-labelledby="showroom-heading"
 >
-    <div class="relative aspect-[4/3] min-h-[21rem] overflow-hidden rounded-sm border border-slate-700/80 bg-[#090d13] sm:min-h-[32rem]">
-        <div class="product-showcase-grid pointer-events-none absolute inset-0 opacity-35"></div>
+    <div class="relative aspect-[4/3] overflow-hidden rounded-sm border border-slate-700/80 bg-[#090d13] min-[480px]:min-h-[21rem] sm:min-h-[32rem]">
+        <div class="product-showcase-grid pointer-events-none absolute inset-0 opacity-20"></div>
         <img
             src="{{ asset($showcase['poster']) }}"
             data-showroom-poster

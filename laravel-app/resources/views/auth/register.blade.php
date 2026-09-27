@@ -3,12 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Create Account | MAAT TECHNOLOGIE BD</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Create Account | MAAT Technologies BD</title>
+    @vite('resources/css/app.css')
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Manrope','sans-serif'],mono:['DM Mono','monospace']},colors:{tech:{300:'#5eead4',400:'#2dd4bf',500:'#14b8a6',600:'#0d9488'},cyber:{border:'#263141',panel:'#121722'}}}}}</script>
 </head>
 <body class="min-h-screen bg-[#090b10] font-sans text-white">
     <div class="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(38,49,65,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(38,49,65,.35)_1px,transparent_1px)] [background-size:42px_42px]"></div>
@@ -20,7 +17,7 @@
             <a href="{{ route('home') }}" class="flex items-center gap-3">
                 <span class="grid h-9 w-9 place-items-center border border-tech-400 bg-tech-600"><i data-lucide="cpu" class="h-5 w-5"></i></span>
                 <span>
-                    <strong class="block font-mono text-lg">MAAT TECHNOLOGIE BD</strong>
+                    <strong class="block font-mono text-lg">MAAT Technologies BD</strong>
                     <small class="font-mono text-[9px] tracking-[.18em] text-tech-400">ACCOUNT_CREATION</small>
                 </span>
             </a>

@@ -10,7 +10,7 @@
 @endphp
 
 @section('content')
-<main class="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+<main class="mx-auto max-w-7xl px-4 pb-32 pt-10 sm:px-6 lg:pb-10">
     <a href="{{ route('products') }}" class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-tech-400 outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="arrow-left" class="h-4 w-4"></i>Back to products</a>
 
     <div class="mt-5 grid gap-6 lg:grid-cols-[1.35fr_.65fr] lg:items-start">
@@ -47,7 +47,7 @@
                 @endif
                 <p class="mt-3 text-sm text-slate-300">Availability: <span class="font-semibold {{ $product->stock > 0 ? 'text-tech-300' : 'text-rose-300' }}">{{ $product->stock > 0 ? 'In stock (' . $product->stock . ' available)' : 'Out of stock' }}</span></p>
             </div>
-            <form method="POST" action="{{ route('cart.add', $product) }}" class="mt-6">
+            <form id="product-purchase-form" method="POST" action="{{ route('cart.add', $product) }}" class="mt-6" data-submit-once>
                 @csrf
                 <label class="block text-sm font-semibold text-slate-200">Quantity
                     <input type="number" name="quantity" min="1" max="{{ max(1, $product->stock) }}" value="1" {{ $product->stock < 1 ? 'disabled' : '' }} class="mt-2 min-h-11 w-full rounded-sm border border-cyber-border bg-[#090d14] px-3 py-3 text-white outline-none focus-visible:border-tech-400 focus-visible:ring-2 focus-visible:ring-tech-300">
@@ -119,11 +119,23 @@
         </section>
     @endif
 </main>
+
+<div class="fixed inset-x-0 bottom-0 z-40 border-t border-cyber-border bg-[#090d14]/95 px-4 py-3 shadow-[0_-12px_35px_rgb(0_0_0/.45)] backdrop-blur lg:hidden" aria-label="Mobile purchase action">
+    <div class="mx-auto flex max-w-7xl items-center gap-3">
+        <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-semibold text-white">{{ $product->name }}</p>
+            <p class="font-mono text-sm text-tech-300">BDT {{ number_format($product->final_price, 2) }}</p>
+        </div>
+        <button type="submit" form="product-purchase-form" {{ $product->stock < 1 ? 'disabled' : '' }} class="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-sm border border-tech-400 bg-tech-600 px-5 py-3 text-sm font-semibold text-white outline-none hover:bg-tech-500 focus-visible:ring-2 focus-visible:ring-tech-300 disabled:cursor-not-allowed disabled:opacity-50">
+            <i data-lucide="shopping-cart" class="h-4 w-4"></i>{{ $product->stock > 0 ? 'Add to Cart' : 'Out of Stock' }}
+        </button>
+    </div>
+</div>
 @endsection
 
 @push('head')
 <style>
-    .product-showcase-grid { background-image: linear-gradient(rgb(45 212 191 / .06) 1px, transparent 1px), linear-gradient(90deg, rgb(45 212 191 / .06) 1px, transparent 1px); background-size: 28px 28px; }
+    .product-showcase-grid { background-image: linear-gradient(rgb(45 212 191 / .03) 1px, transparent 1px), linear-gradient(90deg, rgb(45 212 191 / .03) 1px, transparent 1px); background-size: 28px 28px; }
     .product-showroom fieldset { min-inline-size: 0; }
     .product-showroom[data-showroom-state="ready"] [data-showroom-canvas] { opacity: 1; }
     .product-showroom[data-showroom-state="ready"] [data-showroom-poster] { opacity: 0; }

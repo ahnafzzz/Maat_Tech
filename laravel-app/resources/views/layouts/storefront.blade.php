@@ -3,45 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'MAAT TECHNOLOGIE BD') | MAAT TECHNOLOGIE BD</title>
-    <meta name="description" content="@yield('meta_description', 'Precision mechanical arm lighting systems by MAAT TECHNOLOGIE BD')">
-    <meta property="og:title" content="@yield('title', 'MAAT TECHNOLOGIE BD') | MAAT TECHNOLOGIE BD">
+    <title>@yield('title', 'MAAT Technologies BD') | MAAT Technologies BD</title>
+    <meta name="description" content="@yield('meta_description', 'Precision mechanical arm lighting systems by MAAT Technologies BD')">
+    <meta property="og:title" content="@yield('title', 'MAAT Technologies BD') | MAAT Technologies BD">
     <meta property="og:description" content="@yield('meta_description', 'Industrial-grade articulated arm lighting and delivery across Bangladesh.')">
     <meta property="og:image" content="{{ asset('images/brand/maat-tech-logo.png') }}">
     <meta property="og:url" content="{{ url()->current() }}">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="{{ url()->current() }}">
-    @vite('resources/js/app.js')
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Manrope', 'sans-serif'], mono: ['DM Mono', 'monospace'] },
-                    colors: { tech: { 300: '#5eead4', 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 900: '#134e4a', 950: '#042f2e' }, cyber: { dark: '#090b10', panel: '#121722', border: '#263141' } }
-                }
-            }
-        };
-    </script>
-    <style>
-        body { background: #090b10; color: #e2e8f0; }
-        .system-grid { background-image: linear-gradient(rgba(38,49,65,.34) 1px, transparent 1px), linear-gradient(90deg, rgba(38,49,65,.34) 1px, transparent 1px); background-size: 42px 42px; mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent); }
-        .scanline { background: linear-gradient(to bottom, transparent 50%, rgba(45,212,191,.022) 50%); background-size: 100% 4px; }
-        .glass-panel { background: rgba(18,23,34,.82); border: 1px solid rgba(38,49,65,.9); backdrop-filter: blur(14px); }
-        .tech-rule::before { content: ''; display: block; height: 1px; background: linear-gradient(90deg, transparent, #14b8a6, transparent); }
-        .status-dot { box-shadow: 0 0 12px #2dd4bf; }
-        .brand-logo { filter: drop-shadow(0 0 6px rgba(45,212,191,.24)); }
-    </style>
     <script type="application/ld+json">
         {!! json_encode([
             '@context' => 'https://schema.org',
             '@type' => 'Organization',
-            'name' => 'MAAT TECHNOLOGIE BD',
+            'name' => 'MAAT Technologies BD',
             'url' => url('/'),
             'logo' => asset('images/brand/maat-tech-logo.png'),
             'email' => 'maat.technologies.bd@gmail.com',
@@ -66,26 +43,24 @@
     @stack('head')
 </head>
 <body class="min-h-screen font-sans antialiased">
-    <div class="pointer-events-none fixed inset-0 -z-10 system-grid opacity-70"></div>
-    <div class="pointer-events-none fixed inset-0 z-50 scanline"></div>
-    <nav class="sticky top-0 z-40 border-b border-cyber-border/90 bg-[#090b10]/90 backdrop-blur-xl">
+    <nav class="sticky top-0 z-40 border-b border-cyber-border/90 bg-[#090b10]/95 backdrop-blur-xl">
         <div class="tech-rule"></div>
         <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-            <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-3" aria-label="MAAT TECHNOLOGIE BD home">
-                <img src="{{ asset('images/brand/maat-tech-logo.png') }}" alt="MAAT TECHNOLOGIE BD logo" class="brand-logo h-11 w-16 shrink-0 object-contain">
-                <span class="leading-none"><strong class="block font-mono text-lg tracking-tight text-white">MAAT TECHNOLOGIE BD</strong><small class="font-mono text-[9px] tracking-[.22em] text-tech-400">PRECISION.LIGHTING</small></span>
+            <a href="{{ route('home') }}" class="flex min-h-11 shrink-0 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-tech-300" aria-label="MAAT Technologies BD home">
+                <img src="{{ asset('images/brand/maat-tech-logo.png') }}" alt="MAAT Technologies BD logo" class="brand-logo h-11 w-16 shrink-0 object-contain">
+                <span class="hidden leading-none sm:block"><strong class="block text-base font-extrabold tracking-tight text-white">MAAT Technologies BD</strong><small class="font-mono text-[9px] tracking-[.18em] text-tech-400">PRECISION LIGHTING</small></span>
             </a>
             <div class="hidden max-w-md flex-1 md:block">
-                <a href="{{ route('products') }}" class="flex items-center gap-3 border border-cyber-border bg-cyber-panel/60 px-3 py-2 text-xs font-mono text-slate-500 transition hover:border-tech-600 hover:text-tech-300"><i data-lucide="search" class="h-4 w-4"></i><span>SEARCH_CATALOG</span></a>
+                <a href="{{ route('products') }}" class="flex min-h-11 items-center justify-center gap-2 rounded-sm border border-cyber-border bg-cyber-panel/60 px-4 py-2 text-sm font-semibold text-slate-300 outline-none transition hover:border-tech-600 hover:text-white focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="lamp-desk" class="h-4 w-4"></i><span>Shop Lamps</span></a>
             </div>
             <div class="flex items-center gap-1 sm:gap-2">
-                <a href="{{ route('wishlist.index') }}" title="Wishlist" class="grid h-9 w-9 place-items-center text-slate-400 transition hover:text-tech-300"><i data-lucide="heart" class="h-4 w-4"></i></a>
-                <a href="{{ route('cart.index') }}" title="Cart" class="grid h-9 w-9 place-items-center text-slate-400 transition hover:text-tech-300"><i data-lucide="shopping-cart" class="h-4 w-4"></i></a>
+                <a href="{{ route('wishlist.index') }}" aria-label="Your wishlist" title="Your wishlist" class="grid h-11 w-11 place-items-center rounded-sm text-slate-400 outline-none transition hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="heart" class="h-5 w-5"></i></a>
+                <a href="{{ route('cart.index') }}" aria-label="Your cart" title="Your cart" class="grid h-11 w-11 place-items-center rounded-sm text-slate-400 outline-none transition hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="shopping-cart" class="h-5 w-5"></i></a>
                 <span class="mx-1 hidden h-6 w-px bg-cyber-border sm:block"></span>
                 @auth
-                    <a href="{{ route('dashboard') }}" class="flex items-center gap-2 border border-cyber-border px-3 py-2 text-xs font-mono text-slate-200 transition hover:border-tech-600 hover:text-tech-300"><i data-lucide="user" class="h-4 w-4"></i><span class="hidden sm:inline">ACCOUNT</span></a>
+                    <a href="{{ route('dashboard') }}" class="flex min-h-11 items-center gap-2 rounded-sm border border-cyber-border px-3 py-2 text-sm font-semibold text-slate-200 outline-none transition hover:border-tech-600 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="user" class="h-4 w-4"></i><span class="hidden sm:inline">Account</span></a>
                 @else
-                    <a href="{{ route('login') }}" class="flex items-center gap-2 border border-cyber-border px-3 py-2 text-xs font-mono text-slate-200 transition hover:border-tech-600 hover:text-tech-300"><i data-lucide="log-in" class="h-4 w-4"></i><span class="hidden sm:inline">CUSTOMER_LOGIN</span></a>
+                    <a href="{{ route('login') }}" class="flex min-h-11 items-center gap-2 rounded-sm border border-cyber-border px-3 py-2 text-sm font-semibold text-slate-200 outline-none transition hover:border-tech-600 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="log-in" class="h-4 w-4"></i><span class="hidden sm:inline">Sign in</span></a>
                 @endauth
             </div>
         </div>
@@ -99,9 +74,9 @@
     @yield('content')
     <footer class="mt-16 border-t border-cyber-border bg-[#07090d]/90">
         <div class="mx-auto flex max-w-7xl flex-col justify-between gap-3 px-4 py-8 text-[10px] font-mono text-slate-500 sm:flex-row sm:px-6">
-            <span>2026 MAAT TECHNOLOGIE BD</span>
-            <span class="flex items-center gap-2 text-tech-500"><i class="status-dot h-2 w-2 bg-tech-400"></i>SYS.STATUS: OPERATIONAL</span>
-            <a href="{{ route('admin.login') }}" class="transition hover:text-tech-300">ADMIN_ACCESS</a>
+            <span>2026 MAAT Technologies BD</span>
+            <span class="flex items-center gap-2 text-tech-500"><i class="status-dot h-2 w-2 bg-tech-400"></i>Storefront online</span>
+            <a href="{{ route('admin.login') }}" class="inline-flex min-h-11 items-center transition hover:text-tech-300">Admin access</a>
         </div>
         <div class="mx-auto grid max-w-7xl gap-3 border-t border-cyber-border px-4 py-5 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-4 sm:px-6">
             <div class="space-y-2">
@@ -126,8 +101,8 @@
             </div>
         </div>
     </footer>
-    <a href="https://wa.me/8801601934752" target="_blank" rel="noreferrer" aria-label="Order on WhatsApp" class="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full border border-emerald-500 bg-emerald-600 px-4 py-3 text-xs font-mono text-white shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-500">WHATSAPP_ORDER</a>
-    <script>lucide.createIcons();</script>
+    <a href="https://wa.me/8801601934752" target="_blank" rel="noreferrer" aria-label="Ask on WhatsApp" class="fixed bottom-5 right-5 z-30 hidden min-h-11 items-center gap-2 rounded-full border border-emerald-500 bg-emerald-700 px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-black/30 transition hover:bg-emerald-600 sm:inline-flex">Ask on WhatsApp</a>
+    <script>window.lucide?.createIcons();</script>
     @stack('scripts')
 </body>
 </html>

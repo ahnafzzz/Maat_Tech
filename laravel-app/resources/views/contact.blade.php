@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Contact')
-@section('meta_description', 'Contact MAAT TECHNOLOGIE BD for sales, support, WhatsApp orders, and product guidance.')
+@section('meta_description', 'Contact MAAT Technologies BD for sales, support, WhatsApp orders, and product guidance.')
 @section('content')
 <main class="mx-auto max-w-2xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">COMMS_CHANNEL</p>

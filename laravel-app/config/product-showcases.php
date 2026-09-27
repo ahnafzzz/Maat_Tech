@@ -17,7 +17,7 @@ return [
     'products' => $lampProductSlug === '' ? [] : [
         $lampProductSlug => [
             'model_id' => 'maat-led-swing-arm-desk-lamp-v1',
-            'manifest' => 'assets/models/desk-lamp/desk-lamp.de824f25cf33f9e6.json',
+            'manifest' => 'assets/models/desk-lamp/desk-lamp.4843375218151318.json',
             'poster' => 'assets/models/desk-lamp/desk-lamp-poster.webp',
         ],
     ],

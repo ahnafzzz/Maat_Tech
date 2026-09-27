@@ -181,6 +181,34 @@ async function fetchWithTimeout(url, signal, timeout = 20000) {
     }
 }
 
+async function decodeGzip(response) {
+    if (!response.body || typeof DecompressionStream !== 'function') {
+        throw new Error('Streaming gzip decompression is unavailable.');
+    }
+
+    return new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+}
+
+async function fetchModelBinary(manifest, manifestResponse, manifestUrl) {
+    const baseUrl = manifestResponse.url || manifestUrl;
+    const compressed = manifest.buffer.compressed;
+    if (compressed?.format === 'gzip' && typeof DecompressionStream === 'function') {
+        try {
+            const compressedUrl = new URL(compressed.url, baseUrl);
+            const compressedResponse = await fetchWithTimeout(compressedUrl, undefined, 90000);
+
+            return await decodeGzip(compressedResponse);
+        } catch {
+            // The raw fingerprinted buffer remains the compatibility and recovery path.
+        }
+    }
+
+    const binaryUrl = new URL(manifest.buffer.url, baseUrl);
+    const binaryResponse = await fetchWithTimeout(binaryUrl, undefined, 120000);
+
+    return binaryResponse.arrayBuffer();
+}
+
 export function shouldAnimate({ active, documentVisible, reducedMotion, autoRotate = true }) {
     return active && documentVisible && !reducedMotion && autoRotate;
 }
@@ -239,9 +267,7 @@ export class DeskLampShowcaseRenderer {
             modelPromise = (async () => {
                 const manifestResponse = await fetchWithTimeout(manifestUrl);
                 const manifest = await manifestResponse.json();
-                const binaryUrl = new URL(manifest.buffer.url, manifestResponse.url || manifestUrl);
-                const binaryResponse = await fetchWithTimeout(binaryUrl);
-                const binary = await binaryResponse.arrayBuffer();
+                const binary = await fetchModelBinary(manifest, manifestResponse, manifestUrl);
 
                 if (binary.byteLength !== manifest.buffer.bytes || binary.byteLength % manifest.buffer.strideBytes !== 0) {
                     throw new Error('The 3D vertex buffer failed its size validation.');

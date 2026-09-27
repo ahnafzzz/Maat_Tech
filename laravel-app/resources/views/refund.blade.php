@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Refund Policy')
-@section('meta_description', 'Refund policy for eligible MAAT TECHNOLOGIE BD orders in Bangladesh.')
+@section('meta_description', 'Refund policy for eligible MAAT Technologies BD orders in Bangladesh.')
 @section('content')
 <main class="mx-auto max-w-3xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">REFUND_RULESET</p>

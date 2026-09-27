@@ -74,8 +74,9 @@ class HomePageTest extends TestCase
 
     public function test_extracted_showcase_assets_preserve_verified_model_contract(): void
     {
-        $manifestPath = public_path('assets/models/desk-lamp/desk-lamp.de824f25cf33f9e6.json');
+        $manifestPath = public_path('assets/models/desk-lamp/desk-lamp.4843375218151318.json');
         $binaryPath = public_path('assets/models/desk-lamp/desk-lamp.a45a18eea9197981.bin');
+        $compressedPath = public_path('assets/models/desk-lamp/desk-lamp.3d8ef3d83ad3e741.bin.gz');
         $posterPath = public_path('assets/models/desk-lamp/desk-lamp-poster.webp');
         $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
 
@@ -84,6 +85,10 @@ class HomePageTest extends TestCase
         $this->assertSame(801426, $manifest['buffer']['vertexCount']);
         $this->assertSame(19234224, filesize($binaryPath));
         $this->assertSame($manifest['buffer']['sha256'], hash_file('sha256', $binaryPath));
+        $this->assertSame('gzip', $manifest['buffer']['compressed']['format']);
+        $this->assertSame(4369869, filesize($compressedPath));
+        $this->assertSame($manifest['buffer']['compressed']['sha256'], hash_file('sha256', $compressedPath));
+        $this->assertSame(file_get_contents($binaryPath), gzdecode((string) file_get_contents($compressedPath)));
         $this->assertSame(['Cable.'], $manifest['profiles']['showcase']['hiddenPartPrefixes']);
         $this->assertFalse($manifest['profiles']['showcase']['proceduralExternalLead']);
         $this->assertContains('Head.diffuser', array_column($manifest['parts'], 'name'));

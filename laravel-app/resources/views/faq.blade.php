@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'FAQ')
-@section('meta_description', 'Frequently asked questions about delivery, payment, warranty, and returns at MAAT TECHNOLOGIE BD.')
+@section('meta_description', 'Frequently asked questions about delivery, payment, warranty, and returns at MAAT Technologies BD.')
 @section('content')
 <main class="mx-auto max-w-3xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">KNOWLEDGE_BASE</p>

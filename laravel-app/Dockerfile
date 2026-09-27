@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     && docker-php-ext-install pdo_pgsql pdo_mysql pdo_sqlite zip gd mbstring bcmath xml
 
+RUN a2enmod headers expires
+
 # Copy Composer from the official Docker image
 COPY --from=composer:2.10 /usr/bin/composer /usr/bin/composer
 

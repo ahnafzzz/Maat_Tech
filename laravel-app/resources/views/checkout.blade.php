@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Checkout')
-@section('meta_description', 'Complete your MAAT TECHNOLOGIE BD order with Cash on Delivery and delivery details.')
+@section('meta_description', 'Complete your MAAT Technologies BD order with Cash on Delivery and delivery details.')
 @section('content')
 <main class="mx-auto max-w-6xl px-4 py-12 sm:px-6">
     <header class="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -64,7 +64,7 @@
             <div class="mt-5 border-t border-cyber-border pt-4">
                 <div class="flex justify-between text-base font-semibold text-white"><span>Total</span><span id="checkout-total-label">{{ $total === null ? 'Select district' : 'BDT '.number_format((float) $total, 2) }}</span></div>
             </div>
-            <a href="https://wa.me/8801601934752?text={{ urlencode('I need checkout help with my MAAT TECHNOLOGIE BD order.') }}" target="_blank" rel="noreferrer" class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-xs font-mono text-emerald-300 hover:bg-emerald-900/50"><i data-lucide="message-circle" class="h-4 w-4"></i>NEED_HELP_ON_WHATSAPP</a>
+            <a href="https://wa.me/8801601934752?text={{ urlencode('I need checkout help with my MAAT Technologies BD order.') }}" target="_blank" rel="noreferrer" class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-xs font-mono text-emerald-300 hover:bg-emerald-900/50"><i data-lucide="message-circle" class="h-4 w-4"></i>NEED_HELP_ON_WHATSAPP</a>
         </aside>
     </div>
 </main>

@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Return Policy')
-@section('meta_description', 'Return policy for MAAT TECHNOLOGIE BD products and order handling.')
+@section('meta_description', 'Return policy for MAAT Technologies BD products and order handling.')
 @section('content')
 <main class="mx-auto max-w-3xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">RETURN_PROTOCOL</p>

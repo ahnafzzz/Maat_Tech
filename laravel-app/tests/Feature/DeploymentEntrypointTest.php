@@ -14,14 +14,32 @@ class DeploymentEntrypointTest extends TestCase
 
         $this->assertStringContainsString('CMD ["docker/start.sh"]', $dockerfile);
         $this->assertStringContainsString('FROM php:8.4-apache', $dockerfile);
+        $this->assertStringContainsString('a2enmod headers expires', $dockerfile);
         $this->assertStringContainsString('exec apache2-foreground', $startup);
         $this->assertStringContainsString('DocumentRoot /app/public', $virtualHost);
         $this->assertStringContainsString('<LocationMatch "(?i)^/storage/', $virtualHost);
+        $this->assertStringContainsString('application/gzip .gz', $virtualHost);
+        $this->assertStringContainsString('max-age=31536000, immutable', $virtualHost);
         $this->assertStringContainsString('deployment:preflight', $startup);
         $this->assertStringNotContainsString('artisan serve', $dockerfile.$startup);
         $this->assertStringNotContainsString('key:generate', $dockerfile.$startup);
         $this->assertStringNotContainsString('migrate', $dockerfile.$startup);
         $this->assertStringNotContainsString('db:seed', $dockerfile.$startup);
+    }
+
+    public function test_nginx_sample_serves_fingerprinted_model_assets_with_explicit_types_and_cache_policy(): void
+    {
+        $nginx = file_get_contents(base_path('../deployment/nginx/maattech.com.conf'));
+        $htaccess = file_get_contents(public_path('.htaccess'));
+
+        $this->assertStringContainsString('location ^~ /assets/models/', $nginx);
+        $this->assertStringContainsString('application/octet-stream bin;', $nginx);
+        $this->assertStringContainsString('application/gzip gz;', $nginx);
+        $this->assertStringContainsString('max-age=31536000, immutable', $nginx);
+        $this->assertStringNotContainsString('Content-Encoding', $nginx);
+        $this->assertStringContainsString('AddType application/octet-stream .bin', $htaccess);
+        $this->assertStringContainsString('AddType application/gzip .gz', $htaccess);
+        $this->assertStringContainsString('max-age=31536000, immutable', $htaccess);
     }
 
     public function test_automated_deployment_requires_trusted_host_data_and_safety_orchestration(): void

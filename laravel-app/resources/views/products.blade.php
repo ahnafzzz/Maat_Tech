@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Catalog')
-@section('meta_description', 'Browse precision lighting systems and accessories from MAAT TECHNOLOGIE BD.')
+@section('meta_description', 'Browse precision lighting systems and accessories from MAAT Technologies BD.')
 @section('content')
 <main class="mx-auto max-w-7xl px-4 py-12 sm:px-6">
     <header class="mb-10 flex flex-wrap items-end justify-between gap-4">
@@ -8,7 +8,7 @@
             <p class="font-mono text-xs tracking-[.22em] text-tech-400">STORE_FRONT / CATALOG</p>
             <h1 class="mt-2 text-3xl font-bold text-white">Precision Units</h1>
         </div>
-        <a href="{{ route('home') }}" class="inline-flex items-center gap-2 text-xs font-mono text-tech-400 hover:text-tech-300"><i data-lucide="arrow-left" class="h-4 w-4"></i>RETURN_HOME</a>
+        <a href="{{ route('home') }}" class="inline-flex min-h-11 items-center gap-2 font-mono text-xs text-tech-400 outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="arrow-left" class="h-4 w-4"></i>Return home</a>
     </header>
 
     <section class="mb-8 grid gap-4 rounded-xl border border-cyber-border bg-cyber-panel/60 p-4 lg:grid-cols-[1.4fr,1fr,1fr,1fr,auto] lg:items-end">
@@ -83,7 +83,7 @@
                             </div>
                             <form method="POST" action="{{ route('cart.add', $product) }}">
                                 @csrf
-                                <button title="Add {{ $product->name }} to cart" class="grid h-9 w-9 place-items-center rounded-lg border border-tech-600 text-tech-300 transition hover:bg-tech-600 hover:text-white"><i data-lucide="plus" class="h-4 w-4"></i></button>
+                                <button aria-label="Add {{ $product->name }} to cart" class="grid h-11 w-11 place-items-center rounded-lg border border-tech-600 text-tech-300 outline-none transition hover:bg-tech-600 hover:text-white focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="plus" class="h-4 w-4"></i></button>
                             </form>
                         </div>
                     </div>

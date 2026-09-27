@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const applicationRoot = path.resolve(scriptDirectory, '..');
@@ -89,6 +90,9 @@ for (const pivot of ['A', 'A1', 'B', 'B1', 'S', 'T', 'C', 'C1', 'H']) {
 
 const binaryHash = sha256(binary);
 const binaryName = `desk-lamp.${binaryHash.slice(0, 16)}.bin`;
+const compressedBinary = gzipSync(binary, { level: 9, mtime: 0 });
+const compressedHash = sha256(compressedBinary);
+const compressedName = `desk-lamp.${compressedHash.slice(0, 16)}.bin.gz`;
 const metadata = {
     schemaVersion: 1,
     modelId: 'maat-led-swing-arm-desk-lamp-v1',
@@ -103,6 +107,12 @@ const metadata = {
         bytes: binary.byteLength,
         strideBytes,
         vertexCount,
+        compressed: {
+            url: compressedName,
+            format: 'gzip',
+            sha256: compressedHash,
+            bytes: compressedBinary.byteLength,
+        },
     },
     parts: embedded.parts.map((part) => ({
         ...part,
@@ -150,11 +160,13 @@ const metadataName = `desk-lamp.${metadataHash.slice(0, 16)}.json`;
 
 await mkdir(outputDirectory, { recursive: true });
 await writeFile(path.join(outputDirectory, binaryName), binary);
+await writeFile(path.join(outputDirectory, compressedName), compressedBinary);
 await writeFile(path.join(outputDirectory, metadataName), metadataBody);
 
 console.log(JSON.stringify({
     source: { path: sourcePath, bytes: source.byteLength, sha256: sourceHash },
     binary: { path: path.join(outputDirectory, binaryName), bytes: binary.byteLength, sha256: binaryHash },
+    compressed: { path: path.join(outputDirectory, compressedName), bytes: compressedBinary.byteLength, sha256: compressedHash },
     metadata: { path: path.join(outputDirectory, metadataName), bytes: Buffer.byteLength(metadataBody), sha256: metadataHash },
     parts: metadata.parts.length,
     vertices: vertexCount,

@@ -37,6 +37,9 @@ class ProductShowroomTest extends TestCase
             ->assertSee('BDT 2,350.00')
             ->assertSee('In stock (7 available)')
             ->assertSee('name="quantity"', false)
+            ->assertSee('id="product-purchase-form"', false)
+            ->assertSee('form="product-purchase-form"', false)
+            ->assertSee('data-submit-once', false)
             ->assertSee('Add to Cart')
             ->assertSee('storage/products/lamp-front.webp', false)
             ->assertSee('storage/products/lamp-side.webp', false)
@@ -47,6 +50,7 @@ class ProductShowroomTest extends TestCase
             ->assertDontSee('Bulk pricing');
 
         $this->assertSame(1, substr_count($response->getContent(), 'data-product-showroom'));
+        $this->assertSame(1, substr_count($response->getContent(), 'action="'.route('cart.add', $product).'"'));
     }
 
     public function test_unassociated_product_keeps_image_gallery_without_loading_model(): void

@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'About')
-@section('meta_description', 'About MAAT TECHNOLOGIE BD and our precision mechanical lighting systems in Bangladesh.')
+@section('meta_description', 'About MAAT Technologies BD and our precision mechanical lighting systems in Bangladesh.')
 @section('content')
 <main class="mx-auto max-w-4xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">SYSTEM_ORIGIN</p>

@@ -6,7 +6,7 @@
 @section('content')
 <main>
     <section class="relative overflow-hidden px-4 pb-16 pt-12 sm:px-6 lg:pb-24 lg:pt-20">
-        <div class="absolute right-0 top-0 -z-10 h-full w-2/3 bg-[radial-gradient(circle_at_center,rgba(20,184,166,.14),transparent_66%)]"></div>
+        <div class="absolute right-0 top-0 -z-10 h-full w-2/3 bg-[radial-gradient(circle_at_center,rgba(20,184,166,.07),transparent_66%)]"></div>
         <div class="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
             <div class="relative z-10">
                 <p class="mb-6 inline-flex items-center gap-2 border border-tech-800 bg-tech-950/40 px-3 py-2 font-mono text-[10px] uppercase tracking-[.2em] text-tech-300">
@@ -39,7 +39,7 @@
                 @if($heroProduct)
                     <x-product-showcase :product="$heroProduct" :showcase="$heroShowcase" priority="initial" />
                 @else
-                    <div class="grid aspect-[5/4] min-h-[20rem] place-items-center border border-cyber-border bg-[#090d13] text-tech-500">
+                    <div class="grid aspect-[5/4] place-items-center border border-cyber-border bg-[#090d13] text-tech-500 min-[480px]:min-h-[20rem]">
                         <i data-lucide="lamp-desk" class="h-24 w-24" stroke-width="1"></i>
                     </div>
                 @endif
@@ -111,7 +111,7 @@
 @push('head')
 <style>
     .product-showcase-grid {
-        background-image: linear-gradient(rgba(45, 212, 191, .08) 1px, transparent 1px), linear-gradient(90deg, rgba(45, 212, 191, .08) 1px, transparent 1px);
+        background-image: linear-gradient(rgba(45, 212, 191, .04) 1px, transparent 1px), linear-gradient(90deg, rgba(45, 212, 191, .04) 1px, transparent 1px);
         background-size: 44px 44px;
         mask-image: radial-gradient(circle at 62% 48%, black, transparent 68%);
     }

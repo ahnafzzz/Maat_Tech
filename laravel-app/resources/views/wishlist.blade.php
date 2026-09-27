@@ -4,7 +4,7 @@
 <main class="mx-auto max-w-6xl px-4 py-12 sm:px-6">
     <header class="mb-8 flex items-end justify-between">
         <div><p class="font-mono text-xs tracking-[.22em] text-tech-400">SAVED_UNIT_ARRAY</p><h1 class="mt-2 text-3xl font-bold text-white">Wishlist</h1></div>
-        <a href="{{ route('products') }}" class="text-xs font-mono text-tech-400 hover:text-tech-300">BROWSE_CATALOG</a>
+        <a href="{{ route('products') }}" class="inline-flex min-h-11 items-center font-mono text-xs text-tech-400 outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300">Browse products</a>
     </header>
     <div class="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         @forelse($items as $item)
@@ -17,7 +17,7 @@
                         <p class="mt-2 min-h-10 text-sm text-slate-500">{{ \Illuminate\Support\Str::limit($item['product']->description, 84) }}</p>
                         <div class="mt-4 flex items-center justify-between border-t border-cyber-border pt-4">
                             <strong class="font-mono text-tech-300">BDT {{ number_format($item['product']->price) }}</strong>
-                            <a href="{{ route('products.show', $item['product']->slug) }}" class="text-xs font-mono text-slate-300 hover:text-tech-300">INSPECT</a>
+                            <a href="{{ route('products.show', $item['product']->slug) }}" class="inline-flex min-h-11 items-center font-mono text-xs text-slate-300 outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300">View product</a>
                         </div>
                     @else
                         <p class="font-mono text-[10px] text-slate-500">UNAVAILABLE</p>
@@ -26,7 +26,7 @@
                     @endif
                     <form method="POST" action="{{ route('wishlist.toggle', $item['product_id']) }}" class="mt-4 border-t border-cyber-border pt-4">
                         @csrf
-                        <button class="text-xs font-mono text-rose-300 hover:text-rose-200">REMOVE</button>
+                        <button class="min-h-11 px-3 font-mono text-xs text-rose-300 outline-none hover:text-rose-200 focus-visible:ring-2 focus-visible:ring-rose-300">Remove</button>
                     </form>
                 </div>
             </article>

@@ -1,6 +1,6 @@
 @extends('layouts.storefront')
 @section('title', 'Shipping Policy')
-@section('meta_description', 'Shipping policy for MAAT TECHNOLOGIE BD orders across Dhaka and Bangladesh.')
+@section('meta_description', 'Shipping policy for MAAT Technologies BD orders across Dhaka and Bangladesh.')
 @section('content')
 <main class="mx-auto max-w-3xl px-4 py-16 sm:px-6">
     <p class="font-mono text-xs tracking-[.22em] text-tech-400">DELIVERY_PROTOCOL</p>
