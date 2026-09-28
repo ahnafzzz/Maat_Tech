@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -26,6 +27,7 @@ const browser = spawn('/usr/bin/chromium', [
 ], { stdio: 'ignore' });
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const digest = (value) => createHash('sha256').update(value).digest('hex');
 
 async function debuggerUrl() {
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -146,6 +148,9 @@ async function waitFor(expression, message) {
         title: document.title,
         state: document.querySelector('[data-product-showroom]')?.dataset.showroomState,
         status: document.querySelector('[data-showroom-status]')?.textContent,
+        anatomyChecked: document.querySelector('[data-showroom-input="anatomy"]')?.checked,
+        explodeValue: document.querySelector('[data-showroom-input="explode"]')?.value,
+        labelCount: document.querySelectorAll('.showroom-part-label').length,
         scripts: [...document.scripts].map((script) => script.src).filter(Boolean),
     })`);
     throw new Error(`${message} ${JSON.stringify(diagnostics)} Browser errors: ${browserErrors.join(' | ')}`);
@@ -154,6 +159,17 @@ async function waitFor(expression, message) {
 async function screenshot(name) {
     const { data } = await client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     await writeFile(path.join(evidenceDirectory, name), Buffer.from(data, 'base64'));
+}
+
+async function selectorScreenshot(selector, name = null) {
+    const clip = await evaluate(`(() => {
+        const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+        return { x: rect.left + scrollX, y: rect.top + scrollY, width: rect.width, height: rect.height, scale: 1 };
+    })()`);
+    const { data } = await client.send('Page.captureScreenshot', { format: 'png', clip, captureBeyondViewport: true });
+    if (name) await writeFile(path.join(evidenceDirectory, name), Buffer.from(data, 'base64'));
+
+    return data;
 }
 
 async function tabTo(selector, maximum = 30) {
@@ -214,6 +230,12 @@ try {
         return { interacted: root.dataset.showroomInteracted, animation: root.dataset.showroomAnimation };
     })()`);
     assert.deepEqual(keyboard, { interacted: 'true', animation: 'paused' });
+    for (let index = 0; index < 12; index += 1) {
+        await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+        await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+    }
+    await delay(150);
+    await screenshot('showroom-desktop-black-angle.png');
 
     const interaction = await evaluate(`(async () => {
         const root = document.querySelector('[data-product-showroom]');
@@ -236,13 +258,87 @@ try {
         return {
             interacted: root.dataset.showroomInteracted,
             animation: root.dataset.showroomAnimation,
-            labels: root.querySelectorAll('.showroom-part-label').length,
             white: root.querySelector('[data-showroom-value="white"]').getAttribute('aria-pressed'),
             warm: root.querySelector('[data-showroom-value="warm"]').getAttribute('aria-pressed'),
         };
     })()`);
-    assert.deepEqual(interaction, { interacted: 'true', animation: 'paused', labels: 8, white: 'true', warm: 'true' });
+    assert.deepEqual(interaction, { interacted: 'true', animation: 'paused', white: 'true', warm: 'true' });
+    await waitFor('document.querySelectorAll(".showroom-part-label").length === 8', 'Anatomy labels did not render.');
     await screenshot('showroom-desktop-engineering.png');
+    await evaluate(`(() => {
+        const root = document.querySelector('[data-product-showroom]');
+        for (const [name, value] of [['explode', 0]]) {
+            const input = root.querySelector('[data-showroom-input="' + name + '"]');
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const anatomy = root.querySelector('[data-showroom-input="anatomy"]');
+        anatomy.checked = false;
+        anatomy.dispatchEvent(new Event('input', { bubbles: true }));
+        root.querySelector('[data-showroom-action="camera"][data-showroom-value="front"]').click();
+    })()`);
+    await delay(150);
+    await screenshot('showroom-desktop-white-front.png');
+
+    const parity = await evaluate(`(async () => {
+        const root = document.querySelector('[data-product-showroom]');
+        const click = (action, value) => root.querySelector('[data-showroom-action="' + action + '"]' + (value ? '[data-showroom-value="' + value + '"]' : '')).click();
+        for (const mode of ['cool', 'neutral', 'off', 'warm']) click('light', mode);
+        for (const view of ['front', 'perspective']) click('camera', view);
+        click('fit');
+        for (const group of ['controller', 'clamp', 'head']) click('inspect', group);
+        for (const preset of ['study', 'reach', 'tall', 'low', 'wide', 'folded']) click('preset', preset);
+        click('resetPose');
+        const input = (name, value, checked = null) => {
+            const control = root.querySelector('[data-showroom-input="' + name + '"]');
+            if (checked === null) control.value = value;
+            else control.checked = checked;
+            control.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        input('simulationBrightness', 3);
+        click('resetPose');
+        input('selection', 'cable');
+        input('isolate', '', true);
+        click('focus');
+        input('isolate', '', false);
+        input('anatomy', '', true);
+        input('wires', '', true);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return {
+            cameras: root.querySelectorAll('[data-showroom-action="camera"]').length,
+            closeups: root.querySelectorAll('.showroom-choice[data-showroom-action="inspect"]').length,
+            presets: root.querySelectorAll('[data-showroom-action="preset"]').length,
+            articulation: ['lower', 'upper', 'tilt', 'roll', 'baseYaw', 'jaw'].every((name) => root.querySelector('[data-showroom-input="' + name + '"]')),
+            selectionOptions: root.querySelector('[data-showroom-input="selection"]').options.length,
+            simulation: root.querySelector('[data-showroom-output="simulationBrightness"]').textContent.trim(),
+            wires: root.querySelector('[data-showroom-input="wires"]').checked,
+            labels: root.querySelectorAll('.showroom-part-label').length,
+            description: root.querySelector('[data-showroom-part-description]').textContent,
+        };
+    })()`);
+    assert.deepEqual(parity, {
+        cameras: 2,
+        closeups: 3,
+        presets: 6,
+        articulation: true,
+        selectionOptions: 10,
+        simulation: '3 / 10',
+        wires: true,
+        labels: 9,
+        description: 'Base-to-controller and controller-to-USB leads; arm and head wiring remain concealed.',
+    });
+    await screenshot('showroom-desktop-wire-inspection.png');
+
+    await evaluate(`document.querySelector('[data-showroom-action="separateClamp"]').click()`);
+    await delay(200);
+    await screenshot('showroom-desktop-clamp-separated.png');
+
+    await evaluate(`(() => {
+        document.querySelector('[data-showroom-action="resetPose"]').click();
+        document.querySelector('[data-showroom-action="explodeToggle"]').click();
+    })()`);
+    await delay(200);
+    await screenshot('showroom-desktop-exploded.png');
 
     const reset = await evaluate(`(() => {
         const root = document.querySelector('[data-product-showroom]');
@@ -254,9 +350,24 @@ try {
             anatomy: root.querySelector('[data-showroom-input="anatomy"]').checked,
             black: root.querySelector('[data-showroom-value="black"]').getAttribute('aria-pressed'),
             cool: root.querySelector('[data-showroom-value="cool"]').getAttribute('aria-pressed'),
+            brightness: root.querySelector('[data-showroom-output="brightness"]').textContent.trim(),
+            simulationBrightness: root.querySelector('[data-showroom-output="simulationBrightness"]').textContent.trim(),
+            wires: root.querySelector('[data-showroom-input="wires"]').checked,
+            selection: root.querySelector('[data-showroom-input="selection"]').value,
         };
     })()`);
-    assert.deepEqual(reset, { lower: '118', jaw: '25.1', explode: '0', anatomy: false, black: 'true', cool: 'true' });
+    assert.deepEqual(reset, {
+        lower: '118',
+        jaw: '25.1',
+        explode: '0',
+        anatomy: false,
+        black: 'true',
+        cool: 'true',
+        brightness: '5 / 5',
+        simulationBrightness: '10 / 10',
+        wires: false,
+        selection: 'all',
+    });
 
     assert.equal(await evaluate(`(() => {
         const gl = document.querySelector('[data-showroom-canvas]').getContext('webgl');
@@ -360,6 +471,7 @@ try {
             pointerEvents: getComputedStyle(canvas).pointerEvents,
             animation: root.dataset.showcaseAnimation,
             hasManipulationControls: Boolean(root.querySelector('button, input, details')),
+            visibleSitemapLinks: [...document.querySelectorAll('a')].filter((link) => link.textContent.trim() === 'Sitemap').length,
         };
     })()`);
     assert.deepEqual(homepage, {
@@ -367,8 +479,29 @@ try {
         pointerEvents: 'none',
         animation: 'running',
         hasManipulationControls: false,
+        visibleSitemapLinks: 0,
     });
-    await screenshot('homepage-desktop.png');
+    await tabTo('[data-product-showcase]');
+    assert.equal(await evaluate(`(() => {
+        const style = getComputedStyle(document.querySelector('[data-product-showcase]'));
+        return style.boxShadow !== 'none' || style.outlineStyle !== 'none';
+    })()`), true, 'Homepage showcase focus was not visibly styled.');
+    await waitFor('getComputedStyle(document.querySelector("[data-showcase-poster]")).opacity === "0"', 'Homepage poster did not finish fading.');
+    await delay(600);
+    const rotationStart = await selectorScreenshot('[data-product-showcase]', 'homepage-desktop-rotation-start.png');
+    await delay(2200);
+    const rotationEnd = await selectorScreenshot('[data-product-showcase]', 'homepage-desktop-rotation-end.png');
+    assert.notEqual(digest(rotationStart), digest(rotationEnd), 'Homepage model pixels did not change during normal-motion rotation.');
+    homepage.sustainedRotationObserved = true;
+    await evaluate('window.scrollTo(0, document.documentElement.scrollHeight)');
+    await delay(250);
+    assert.equal(await evaluate('document.querySelector("[data-product-showcase]").dataset.showcaseAnimation'), 'paused');
+    await evaluate('window.scrollTo(0, 0)');
+    await delay(250);
+    assert.equal(await evaluate('document.querySelector("[data-product-showcase]").dataset.showcaseAnimation'), 'running');
+    await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await waitFor('location.pathname === "/products/series-x-articulated-lamp"', 'Homepage showcase keyboard activation did not navigate to its associated product.');
 
     phase = 'image-only-product';
     await navigate(`${baseUrl}/products/led-matrix-panel`);
@@ -382,6 +515,18 @@ try {
     await waitFor('document.querySelector("[data-product-showcase]")?.dataset.showcaseState === "ready"', 'Mobile homepage showcase did not become ready.');
     assert.equal(await evaluate('document.querySelector("[data-product-showcase]").dataset.showcaseAnimation'), 'paused');
     assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'), false);
+    await waitFor('getComputedStyle(document.querySelector("[data-showcase-poster]")).opacity === "0"', 'Reduced-motion homepage poster did not finish fading.');
+    await delay(600);
+    const reducedStart = await selectorScreenshot('[data-product-showcase]', 'homepage-mobile-reduced-motion-start.png');
+    await delay(1500);
+    const reducedEnd = await selectorScreenshot('[data-product-showcase]', 'homepage-mobile-reduced-motion-end.png');
+    const reducedMotion = {
+        animationBefore: 'paused',
+        animationAfter: await evaluate('document.querySelector("[data-product-showcase]").dataset.showcaseAnimation'),
+        startScreenshotHash: digest(reducedStart),
+        endScreenshotHash: digest(reducedEnd),
+    };
+    assert.equal(reducedMotion.animationAfter, 'paused');
     await screenshot('homepage-mobile-reduced-motion.png');
 
     if (sourceViewer) {
@@ -406,6 +551,7 @@ try {
         desktop,
         keyboard,
         interaction,
+        parity,
         reset,
         mobile,
         coldTransfers,
@@ -413,6 +559,7 @@ try {
         throttled: { scenario: '4 Mbps down, 1.5 Mbps up, 150 ms latency, cache disabled', modelReadyMs: throttledReadyMs, transfers: phaseTransfers('throttled-4mbps-150ms') },
         warm: { modelReadyMs: warmReadyMs, transfers: phaseTransfers('warm-reload') },
         homepage,
+        reducedMotion,
         screenshots: evidenceDirectory,
     };
     await writeFile(path.join(evidenceDirectory, 'browser-transfer-report.json'), `${JSON.stringify(report, null, 2)}\n`);

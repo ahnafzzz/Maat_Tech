@@ -1,0 +1,262 @@
+{
+  "desktop": {
+    "state": "ready",
+    "animation": "running",
+    "controlsEnabled": true,
+    "focusVisible": true,
+    "cartHeight": 48,
+    "quantityLabelled": true,
+    "modelReadyMs": 1016,
+    "posterHiddenAfterReady": true
+  },
+  "keyboard": {
+    "interacted": "true",
+    "animation": "paused"
+  },
+  "interaction": {
+    "interacted": "true",
+    "animation": "paused",
+    "white": "true",
+    "warm": "true"
+  },
+  "parity": {
+    "cameras": 2,
+    "closeups": 3,
+    "presets": 6,
+    "articulation": true,
+    "selectionOptions": 10,
+    "simulation": "3 / 10",
+    "wires": true,
+    "labels": 9,
+    "description": "Base-to-controller and controller-to-USB leads; arm and head wiring remain concealed."
+  },
+  "reset": {
+    "lower": "118",
+    "jaw": "25.1",
+    "explode": "0",
+    "anatomy": false,
+    "black": "true",
+    "cool": "true",
+    "brightness": "5 / 5",
+    "simulationBrightness": "10 / 10",
+    "wires": false,
+    "selection": "all"
+  },
+  "mobile": {
+    "animation": "paused",
+    "touchAction": "pan-y",
+    "overflow": true,
+    "horizontalOverflow": false,
+    "viewport": {
+      "innerWidth": 390,
+      "innerHeight": 844,
+      "visualWidth": 375,
+      "visualHeight": 844
+    },
+    "overflowElements": [],
+    "stickyHeight": 73,
+    "stickyForm": "product-purchase-form",
+    "canvas": {
+      "x": 187.5,
+      "y": 298.625
+    }
+  },
+  "coldTransfers": [
+    {
+      "phase": "cold-desktop",
+      "type": "Document",
+      "url": "http://127.0.0.1:8766/products/series-x-articulated-lamp",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "text/html",
+      "contentEncoding": null,
+      "contentLength": null,
+      "cacheControl": "no-cache, private",
+      "vary": null,
+      "encodedDataLength": 30826
+    },
+    {
+      "phase": "cold-desktop",
+      "type": "Fetch",
+      "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.4843375218151318.json",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "application/json",
+      "contentEncoding": null,
+      "contentLength": "28153",
+      "cacheControl": null,
+      "vary": null,
+      "encodedDataLength": 28305
+    },
+    {
+      "phase": "cold-desktop",
+      "type": "Fetch",
+      "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.3d8ef3d83ad3e741.bin.gz",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "application/gzip",
+      "contentEncoding": null,
+      "contentLength": "4369869",
+      "cacheControl": null,
+      "vary": null,
+      "encodedDataLength": 4370023
+    }
+  ],
+  "rawRecoveryTransfers": [
+    {
+      "phase": "compressed-blocked-raw-recovery",
+      "type": "Document",
+      "url": "http://127.0.0.1:8766/products/series-x-articulated-lamp?failure-check=1",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "text/html",
+      "contentEncoding": null,
+      "contentLength": null,
+      "cacheControl": "no-cache, private",
+      "vary": null,
+      "encodedDataLength": 30826
+    },
+    {
+      "phase": "compressed-blocked-raw-recovery",
+      "type": "Fetch",
+      "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.4843375218151318.json",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "application/json",
+      "contentEncoding": null,
+      "contentLength": "28153",
+      "cacheControl": null,
+      "vary": null,
+      "encodedDataLength": 28305
+    },
+    {
+      "phase": "compressed-blocked-raw-recovery",
+      "type": "Fetch",
+      "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.a45a18eea9197981.bin",
+      "status": 200,
+      "fromDiskCache": false,
+      "fromServiceWorker": false,
+      "mimeType": "application/octet-stream",
+      "contentEncoding": null,
+      "contentLength": "19234224",
+      "cacheControl": null,
+      "vary": null,
+      "encodedDataLength": 19234387
+    }
+  ],
+  "throttled": {
+    "scenario": "4 Mbps down, 1.5 Mbps up, 150 ms latency, cache disabled",
+    "modelReadyMs": 10318,
+    "transfers": [
+      {
+        "phase": "throttled-4mbps-150ms",
+        "type": "Document",
+        "url": "http://127.0.0.1:8766/products/series-x-articulated-lamp?throttled-check=1",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "text/html",
+        "contentEncoding": null,
+        "contentLength": null,
+        "cacheControl": "no-cache, private",
+        "vary": null,
+        "encodedDataLength": 30826
+      },
+      {
+        "phase": "throttled-4mbps-150ms",
+        "type": "Fetch",
+        "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.4843375218151318.json",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "application/json",
+        "contentEncoding": null,
+        "contentLength": "28153",
+        "cacheControl": null,
+        "vary": null,
+        "encodedDataLength": 28305
+      },
+      {
+        "phase": "throttled-4mbps-150ms",
+        "type": "Fetch",
+        "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.3d8ef3d83ad3e741.bin.gz",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "application/gzip",
+        "contentEncoding": null,
+        "contentLength": "4369869",
+        "cacheControl": null,
+        "vary": null,
+        "encodedDataLength": 4370023
+      }
+    ]
+  },
+  "warm": {
+    "modelReadyMs": 649,
+    "transfers": [
+      {
+        "phase": "warm-reload",
+        "type": "Document",
+        "url": "http://127.0.0.1:8766/products/series-x-articulated-lamp?cache-check=1",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "text/html",
+        "contentEncoding": null,
+        "contentLength": null,
+        "cacheControl": "no-cache, private",
+        "vary": null,
+        "encodedDataLength": 30826
+      },
+      {
+        "phase": "warm-reload",
+        "type": "Fetch",
+        "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.4843375218151318.json",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "application/json",
+        "contentEncoding": null,
+        "contentLength": "28153",
+        "cacheControl": null,
+        "vary": null,
+        "encodedDataLength": 28305
+      },
+      {
+        "phase": "warm-reload",
+        "type": "Fetch",
+        "url": "http://127.0.0.1:8766/assets/models/desk-lamp/desk-lamp.3d8ef3d83ad3e741.bin.gz",
+        "status": 200,
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "mimeType": "application/gzip",
+        "contentEncoding": null,
+        "contentLength": "4369869",
+        "cacheControl": null,
+        "vary": null,
+        "encodedDataLength": 4370023
+      }
+    ]
+  },
+  "homepage": {
+    "destination": "/products/series-x-articulated-lamp",
+    "pointerEvents": "none",
+    "animation": "running",
+    "hasManipulationControls": false,
+    "visibleSitemapLinks": 0,
+    "sustainedRotationObserved": true
+  },
+  "reducedMotion": {
+    "animationBefore": "paused",
+    "animationAfter": "paused",
+    "startScreenshotHash": "ed29ee55ff715d4ae0b6535774a35b345b719b1d850d8a40cfe53dd47bad3d87",
+    "endScreenshotHash": "4654459b7887938b719ea90ec8319cd3aa54cb8b1965ebf7cc70c651ad45c85b"
+  },
+  "screenshots": "/home/_graywolf/Website Projects/Multi Business Hub/Maat_Tech/deployment/evidence/ui-3d-parity/after"
+}

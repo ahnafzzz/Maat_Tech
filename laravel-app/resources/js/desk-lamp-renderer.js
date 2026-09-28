@@ -32,14 +32,15 @@ export const DESK_LAMP_PRESETS = Object.freeze({
 });
 
 export const DESK_LAMP_GROUPS = Object.freeze({
-    clamp: { label: 'Clamp & screw', color: [0.28, 0.49, 0.68] },
-    lower: { label: 'Lower linkage', color: [0.32, 0.58, 0.51] },
-    upper: { label: 'Upper linkage', color: [0.47, 0.43, 0.70] },
-    head: { label: 'Light head', color: [0.73, 0.56, 0.30] },
-    springs: { label: 'Tension springs', color: [0.77, 0.40, 0.32] },
-    hardware: { label: 'Pivot hardware', color: [0.54, 0.61, 0.65] },
-    controller: { label: 'Light controller', color: [0.25, 0.57, 0.70] },
-    usb: { label: 'USB connector', color: [0.64, 0.53, 0.40] },
+    clamp: { label: 'Clamp & screw', color: [0.28, 0.49, 0.68], description: 'Curved C body, mounting socket, pressure pad and sliding T handle.' },
+    lower: { label: 'Lower linkage', color: [0.32, 0.58, 0.51], description: 'Two rectangular rails and bent spring-anchor brackets.' },
+    upper: { label: 'Upper linkage', color: [0.47, 0.43, 0.70], description: 'Upper rails and four-corner elbow plates.' },
+    head: { label: 'Light head', color: [0.73, 0.56, 0.30], description: 'Fork, laminated swivel neck, housing, diffuser and end caps.' },
+    springs: { label: 'Tension springs', color: [0.77, 0.40, 0.32], description: 'Four coils with attachment eyes; anchors follow the moving rails.' },
+    hardware: { label: 'Pivot hardware', color: [0.54, 0.61, 0.65], description: 'Axles, washers, nuts, transverse pins and thumb levers.' },
+    controller: { label: 'Light controller', color: [0.25, 0.57, 0.70], description: 'Four keys: brightness +, colour mode, brightness − and power.' },
+    cable: { label: 'Power leads', color: [0.25, 0.25, 0.28], description: 'Base-to-controller and controller-to-USB leads; arm and head wiring remain concealed.' },
+    usb: { label: 'USB connector', color: [0.64, 0.53, 0.40], description: 'Overmould, hollow metal shell, insulator and contacts.' },
 });
 
 const clamp = (value, [minimum, maximum]) => Math.max(minimum, Math.min(maximum, value));
@@ -239,10 +240,14 @@ export class DeskLampShowcaseRenderer {
             mode: 'cool',
             explode: 0,
             anatomy: false,
+            brightness: 10,
+            wires: false,
+            selection: 'all',
+            isolate: false,
         };
         this.profile = manifest.profiles[this.mode === 'showroom' ? 'presentation' : 'showcase'];
         this.parts = manifest.parts.map((part) => ({ ...part }));
-        this.gl = canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+        this.gl = canvas.getContext('webgl', { antialias: true, alpha: true, powerPreference: 'high-performance' });
 
         if (!this.gl) throw new Error('WebGL is unavailable.');
 
@@ -325,6 +330,7 @@ export class DeskLampShowcaseRenderer {
         gl.enableVertexAttribArray(this.locations.normal);
         gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 24, 0);
         gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 24, 12);
+        this.wireBuffer = gl.createBuffer();
     }
 
     anchors() {
@@ -426,15 +432,68 @@ export class DeskLampShowcaseRenderer {
 
             return multiplyMatrices(translate(this.explodedOffset(part)), matrix);
         });
+        this.updateWireBuffer(anchors);
     }
 
     isVisible(part) {
+        if (part.name === 'Cable.base_to_controller') return false;
+        if (part.category === 'cable' && !this.state.wires) return false;
+        if (this.state.isolate && this.state.selection !== 'all' && part.category !== this.state.selection) return false;
+        if (part.category === 'cable' && this.state.wires) return this.state.explode === 0;
+
         return !this.profile.hiddenPartPrefixes.some((prefix) => part.name.startsWith(prefix));
     }
 
-    fit() {
+    updateWireBuffer(anchors = this.anchors()) {
+        if (!this.wireBuffer) return;
+        const start = transformPoint(anchors.base, [-0.004, 0.009, 0.024]);
+        const controlPoints = [
+            start,
+            add(start, [-0.018, 0.010, 0.035]),
+            [-0.083, 0.002, 0.105],
+            [-0.103, -0.026, 0.082],
+        ];
+        const points = [];
+        const samples = 41;
+        for (let index = 0; index < samples; index += 1) {
+            const t = index / (samples - 1);
+            const inverse = 1 - t;
+            points.push([0, 1, 2].map((axis) => (
+                inverse ** 3 * controlPoints[0][axis]
+                + 3 * inverse ** 2 * t * controlPoints[1][axis]
+                + 3 * inverse * t ** 2 * controlPoints[2][axis]
+                + t ** 3 * controlPoints[3][axis]
+            )));
+        }
+        const rings = points.map((point, index) => {
+            const tangent = normalize(subtract(points[Math.min(index + 1, samples - 1)], points[Math.max(index - 1, 0)]));
+            const side = normalize(cross(tangent, Math.abs(tangent[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
+            const up = normalize(cross(side, tangent));
+
+            return Array.from({ length: 10 }, (_, segment) => {
+                const angle = Math.PI * 2 * segment / 10;
+                const normal = add(multiply(side, Math.cos(angle)), multiply(up, Math.sin(angle)));
+                return { position: add(point, multiply(normal, 0.00145)), normal };
+            });
+        });
+        const vertices = [];
+        const append = ({ position, normal }) => vertices.push(...position, ...normal);
+        for (let ring = 0; ring < rings.length - 1; ring += 1) {
+            for (let segment = 0; segment < 10; segment += 1) {
+                const next = (segment + 1) % 10;
+                append(rings[ring][segment]); append(rings[ring + 1][segment]); append(rings[ring + 1][next]);
+                append(rings[ring][segment]); append(rings[ring + 1][next]); append(rings[ring][next]);
+            }
+        }
+        this.wireVertexCount = vertices.length / 6;
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.wireBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(vertices), this.gl.DYNAMIC_DRAW);
+    }
+
+    fit(category = 'all') {
         const points = [];
         this.parts.forEach((part, index) => {
+            if (category !== 'all' && part.category !== category) return;
             if (!this.isVisible(part)) return;
             for (const x of [part.low[0], part.high[0]]) {
                 for (const y of [part.low[1], part.high[1]]) {
@@ -442,6 +501,7 @@ export class DeskLampShowcaseRenderer {
                 }
             }
         });
+        if (!points.length) return;
         const low = [0, 1, 2].map((axis) => Math.min(...points.map((point) => point[axis])));
         const high = [0, 1, 2].map((axis) => Math.max(...points.map((point) => point[axis])));
         this.target = multiply(add(low, high), 0.5);
@@ -487,14 +547,16 @@ export class DeskLampShowcaseRenderer {
         }
 
         if (this.lastFrameTime !== null && shouldAnimate(this)) {
-            this.cameraYaw += Math.min(time - this.lastFrameTime, 50) * 0.00016;
+            this.cameraYaw += Math.min(time - this.lastFrameTime, 50) * 0.0002;
         }
         this.lastFrameTime = time;
         gl.viewport(0, 0, width, height);
-        gl.clearColor(0.035, 0.051, 0.071, 1);
+        gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.useProgram(this.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+        gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 24, 12);
         gl.uniformMatrix4fv(this.locations.viewProjection, false, this.viewProjection());
 
         this.parts.forEach((part, index) => {
@@ -507,6 +569,7 @@ export class DeskLampShowcaseRenderer {
                 && !/knob|rubber|thread|gland|black_swivel|Controller|Cable|USB/.test(part.name);
             if (this.state.anatomy && group) color = group.color.map((channel) => channel * channel * 0.7);
             else if (this.state.finish === 'white' && painted) color = [0.72, 0.76, 0.82];
+            if (this.state.selection !== 'all' && part.category !== this.state.selection) color = multiply(color, 0.6);
             if (part.emissive) {
                 color = this.state.mode === 'warm' ? [0.95, 0.55, 0.20]
                     : this.state.mode === 'neutral' ? [0.88, 0.74, 0.53]
@@ -521,6 +584,16 @@ export class DeskLampShowcaseRenderer {
             gl.uniform1f(this.locations.glow, glow);
             gl.drawArrays(gl.TRIANGLES, part.start, part.count);
         });
+
+        if (this.state.wires && this.state.explode === 0 && (!this.state.isolate || ['all', 'cable'].includes(this.state.selection))) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.wireBuffer);
+            gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 24, 0);
+            gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 24, 12);
+            gl.uniformMatrix4fv(this.locations.model, false, identity());
+            gl.uniform3fv(this.locations.color, this.state.selection === 'all' || this.state.selection === 'cable' ? [0.008, 0.009, 0.012] : [0.003, 0.003, 0.004]);
+            gl.uniform1f(this.locations.glow, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, this.wireVertexCount);
+        }
 
         this.publishLabels();
 
@@ -567,6 +640,12 @@ export class DeskLampShowcaseRenderer {
         this.requestDraw();
     }
 
+    setAutoRotation(enabled) {
+        this.autoRotate = Boolean(enabled);
+        this.setActive(this.active);
+        this.requestDraw();
+    }
+
     orbit(deltaX, deltaY) {
         this.stopAutoRotation();
         this.cameraYaw -= deltaX * 0.008;
@@ -576,7 +655,13 @@ export class DeskLampShowcaseRenderer {
 
     zoomBy(factor) {
         this.stopAutoRotation();
-        this.zoom = clamp(this.zoom * factor, [0.55, 2.6]);
+        this.zoom = clamp(this.zoom * factor, [0.1, 6]);
+        this.requestDraw();
+    }
+
+    pan(deltaX, deltaY) {
+        this.stopAutoRotation();
+        this.target = add(this.target, [-deltaX * 0.001 * this.scale, 0, deltaY * 0.001 * this.scale]);
         this.requestDraw();
     }
 
@@ -590,6 +675,12 @@ export class DeskLampShowcaseRenderer {
         this.stopAutoRotation();
         this.state.mode = ['warm', 'neutral', 'cool', 'off'].includes(mode) ? mode : 'cool';
         this.state.brightness = brightnessForLevel(level);
+        this.requestDraw();
+    }
+
+    setSimulationBrightness(level) {
+        this.stopAutoRotation();
+        this.state.brightness = clamp(Math.round(Number(level)), [1, 10]);
         this.requestDraw();
     }
 
@@ -612,6 +703,78 @@ export class DeskLampShowcaseRenderer {
     setAnatomy(enabled) {
         this.stopAutoRotation();
         this.state.anatomy = Boolean(enabled);
+        this.publishLabels();
+        this.requestDraw();
+    }
+
+    setWires(enabled) {
+        this.stopAutoRotation();
+        this.state.wires = Boolean(enabled);
+        this.requestDraw();
+    }
+
+    setSelection(category) {
+        this.stopAutoRotation();
+        this.state.selection = category === 'all' || DESK_LAMP_GROUPS[category] ? category : 'all';
+        if (this.state.selection === 'cable') this.state.wires = true;
+        this.publishLabels();
+        this.requestDraw();
+    }
+
+    setIsolate(enabled) {
+        this.stopAutoRotation();
+        this.state.isolate = Boolean(enabled);
+        this.fit();
+        this.publishLabels();
+        this.requestDraw();
+    }
+
+    setCameraView(view) {
+        this.stopAutoRotation();
+        if (view === 'front') {
+            this.cameraYaw = -Math.PI / 2;
+            this.cameraElevation = 0;
+        } else {
+            this.cameraYaw = this.manifest.defaultCamera.yaw;
+            this.cameraElevation = this.manifest.defaultCamera.elevation;
+        }
+        this.requestDraw();
+    }
+
+    fitSelection() {
+        this.stopAutoRotation();
+        this.fit(this.state.selection);
+        this.requestDraw();
+    }
+
+    fitAll() {
+        this.stopAutoRotation();
+        this.state.selection = 'all';
+        this.state.isolate = false;
+        this.fit();
+        this.requestDraw();
+    }
+
+    inspect(category, { elevation = 0 } = {}) {
+        this.setSelection(category);
+        this.state.isolate = category !== 'all';
+        this.cameraYaw = -Math.PI / 2;
+        this.cameraElevation = elevation;
+        this.fit(category);
+        this.requestDraw();
+    }
+
+    separateClamp() {
+        this.stopAutoRotation();
+        this.state.selection = 'clamp';
+        this.state.isolate = true;
+        this.state.explode = 100;
+        this.state.jaw = 25.1;
+        this.state.anatomy = false;
+        this.cameraYaw = Math.PI / 2;
+        this.cameraElevation = 0.06;
+        this.updateTransforms();
+        this.fit('clamp');
         this.requestDraw();
     }
 
@@ -622,6 +785,8 @@ export class DeskLampShowcaseRenderer {
         [this.state.lower, this.state.upper, this.state.tilt, this.state.roll] = preset;
         this.state.baseYaw = 0;
         this.state.explode = 0;
+        this.state.selection = 'all';
+        this.state.isolate = false;
         this.updateTransforms();
         this.fit();
         this.requestDraw();
@@ -635,7 +800,30 @@ export class DeskLampShowcaseRenderer {
             mode: 'cool',
             explode: 0,
             anatomy: false,
+            brightness: 10,
+            wires: false,
+            selection: 'all',
+            isolate: false,
         };
+        this.cameraYaw = this.manifest.defaultCamera.yaw;
+        this.cameraElevation = this.manifest.defaultCamera.elevation;
+        this.updateTransforms();
+        this.fit();
+        this.requestDraw();
+    }
+
+    resetPose() {
+        this.stopAutoRotation();
+        for (const name of ['lower', 'upper', 'tilt', 'roll', 'baseYaw', 'jaw']) {
+            this.state[name] = this.manifest.defaultPose[name];
+        }
+        Object.assign(this.state, {
+            explode: 0,
+            anatomy: false,
+            wires: false,
+            selection: 'all',
+            isolate: false,
+        });
         this.cameraYaw = this.manifest.defaultCamera.yaw;
         this.cameraElevation = this.manifest.defaultCamera.elevation;
         this.updateTransforms();
@@ -683,6 +871,7 @@ export class DeskLampShowcaseRenderer {
         this.resizeObserver?.disconnect();
         this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
         this.gl.deleteBuffer(this.buffer);
+        this.gl.deleteBuffer(this.wireBuffer);
         this.gl.deleteProgram(this.program);
         this.gl.getExtension('WEBGL_lose_context')?.loseContext();
     }

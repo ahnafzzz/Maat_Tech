@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Desk lamp poster renderer</title>
     <style>
-        html, body, canvas { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090d13; }
+        html, body, canvas { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        body { background: radial-gradient(circle at 62% 30%, #aab3ba 0%, #828e98 48%, #59656f 100%); }
         canvas { display: block; }
     </style>
 </head>
@@ -18,7 +19,7 @@
         try {
             const renderer = await DeskLampShowcaseRenderer.create(
                 canvas,
-                '/public/assets/models/desk-lamp/desk-lamp.de824f25cf33f9e6.json',
+                '/public/assets/models/desk-lamp/desk-lamp.4843375218151318.json',
                 {
                     onFirstFrame() {
                         document.documentElement.dataset.posterReady = 'true';

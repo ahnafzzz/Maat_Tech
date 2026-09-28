@@ -14,7 +14,7 @@
 
 <a
     href="{{ $productUrl }}"
-    class="product-showcase group relative block aspect-[5/4] overflow-hidden rounded-sm border border-slate-700/80 bg-[#090d13] outline-none transition focus-visible:border-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300 focus-visible:ring-offset-4 focus-visible:ring-offset-[#090b10] min-[480px]:min-h-[20rem] sm:min-h-[28rem] lg:aspect-[6/5]"
+    class="product-showcase group relative block aspect-[5/4] overflow-hidden rounded-sm border border-slate-400/70 bg-slate-200 outline-none transition focus-visible:border-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300 focus-visible:ring-offset-4 focus-visible:ring-offset-[#090b10] min-[480px]:min-h-[20rem] sm:min-h-[28rem] lg:aspect-[6/5]"
     aria-label="View {{ $product->name }}"
     data-product-showcase
     data-showcase-priority="{{ $priority }}"
@@ -23,8 +23,7 @@
         data-showcase-manifest="{{ asset($showcase['manifest']) }}"
     @endif
 >
-    <span class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_64%_42%,rgba(45,212,191,.08),transparent_34%),linear-gradient(145deg,#141b25_0%,#090d13_58%,#05070a_100%)]"></span>
-    <span class="product-showcase-grid pointer-events-none absolute inset-0 opacity-20"></span>
+    <span class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_62%_30%,#aab3ba_0%,#828e98_48%,#59656f_100%)]"></span>
     <img
         src="{{ $poster }}"
         data-showcase-poster
@@ -40,7 +39,7 @@
             aria-hidden="true"
         ></canvas>
     @endif
-    <span class="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[.16em] text-tech-300">
+    <span class="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[.16em] text-slate-700">
         <span>{{ $product->sku ?: 'MAAT FEATURED' }}</span>
         <span data-showcase-status aria-live="polite">{{ $showcase ? 'Loading 3D preview' : 'Product image' }}</span>
     </span>

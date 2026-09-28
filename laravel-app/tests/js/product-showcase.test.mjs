@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
     brightnessForLevel,
+    DESK_LAMP_GROUPS,
     DESK_LAMP_LIMITS,
     DESK_LAMP_PRESETS,
     shouldAnimate,
@@ -45,4 +46,11 @@ test('five customer brightness levels map to the supplied renderer scale', () =>
     assert.deepEqual([1, 2, 3, 4, 5].map(brightnessForLevel), [2, 4, 6, 8, 10]);
     assert.equal(brightnessForLevel(0), 2);
     assert.equal(brightnessForLevel(9), 10);
+});
+
+test('engineering inspection exposes every original component group', () => {
+    assert.deepEqual(Object.keys(DESK_LAMP_GROUPS), [
+        'clamp', 'lower', 'upper', 'head', 'springs', 'hardware', 'controller', 'cable', 'usb',
+    ]);
+    assert.ok(Object.values(DESK_LAMP_GROUPS).every((group) => group.label && group.description));
 });

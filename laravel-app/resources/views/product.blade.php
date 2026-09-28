@@ -146,7 +146,8 @@
     .showroom-button:disabled, .showroom-choice:disabled { cursor: wait; opacity: .5; }
     .showroom-choice { min-height: 44px; border: 1px solid #334155; padding: .6rem .7rem; color: #cbd5e1; outline: none; }
     .showroom-choice[aria-pressed="true"] { border-color: #2dd4bf; background: rgb(13 148 136 / .28); color: white; }
-    .showroom-part-label { position: absolute; transform: translate(-50%, -50%); border: 1px solid rgb(94 234 212 / .6); background: rgb(3 7 18 / .84); padding: .22rem .38rem; font: 500 9px/1.2 "DM Mono", monospace; color: #ccfbf1; white-space: nowrap; }
+    .showroom-part-label { position: absolute; min-height: 44px; transform: translate(-50%, -50%); border: 1px solid rgb(94 234 212 / .6); background: rgb(3 7 18 / .84); padding: .5rem .65rem; font: 500 9px/1.2 "DM Mono", monospace; color: #ccfbf1; white-space: nowrap; pointer-events: auto; outline: none; }
+    .showroom-part-label:focus-visible { box-shadow: 0 0 0 2px #5eead4; }
     details[open] > summary svg { transform: rotate(180deg); }
 </style>
 @endpush

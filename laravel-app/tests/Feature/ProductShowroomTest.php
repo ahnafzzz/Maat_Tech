@@ -45,6 +45,12 @@ class ProductShowroomTest extends TestCase
             ->assertSee('storage/products/lamp-side.webp', false)
             ->assertSee('Visual preview only')
             ->assertSee('Explore Engineering View')
+            ->assertSee('Auto rotate complete lamp')
+            ->assertSee('Separate clamp components')
+            ->assertSee('Show external power leads for inspection')
+            ->assertSee('Renderer simulation intensity')
+            ->assertSee('data-showroom-input="selection"', false)
+            ->assertSee('data-showroom-action="camera"', false)
             ->assertSee('Customer Reviews')
             ->assertDontSee('verified buyer', false)
             ->assertDontSee('Bulk pricing');
@@ -84,6 +90,18 @@ class ProductShowroomTest extends TestCase
             ->assertDontSee('data-product-showroom', false)
             ->assertDontSee('Explore Engineering View')
             ->assertDontSee('data-showroom-action', false);
+    }
+
+    public function test_storefront_navigation_hides_sitemap_but_xml_endpoint_remains_available(): void
+    {
+        $this->product([]);
+
+        $this->get('/')->assertOk()
+            ->assertDontSee('>Sitemap<', false)
+            ->assertDontSee('href="'.route('sitemap').'"', false);
+
+        $this->get('/sitemap.xml')->assertOk()
+            ->assertHeader('Content-Type', 'application/xml');
     }
 
     private function product(array $attributes): Product

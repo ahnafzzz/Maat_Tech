@@ -92,7 +92,6 @@
             <div class="space-y-2">
                 <a href="{{ route('privacy') }}" class="block hover:text-tech-300">Privacy Policy</a>
                 <a href="{{ route('terms') }}" class="block hover:text-tech-300">Terms & Conditions</a>
-                <a href="{{ route('sitemap') }}" class="block hover:text-tech-300">Sitemap</a>
             </div>
             <div class="space-y-2">
                 <a href="https://wa.me/8801601934752" target="_blank" rel="noreferrer" class="block hover:text-tech-300">WhatsApp Order</a>

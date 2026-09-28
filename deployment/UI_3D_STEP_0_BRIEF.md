@@ -191,3 +191,44 @@ The target balance is **70% premium e-commerce clarity and 30% engineering inter
 ## Readiness statement
 
 The supplied source now powers a polished navigation-only homepage showcase and an accessible interactive showroom on the explicitly associated product page. Step 3 development and isolated acceptance are complete. This is not production-release readiness: confirm the canonical product/SKU and model publication rights, approve the legal/trading identity and contacts, verify immutable caching on the selected host/CDN, and complete the physical-device/manual checklist. `FEATURED_LAMP_PRODUCT_SLUG` remains the explicit association override and an empty value safely disables the model. Saleable colour selection, verified-purchase reviews, Bengali localization, hosting purchase, and deployment remain outside this checkpoint.
+
+## 9. Presentation correction and original-viewer parity (2026-09-28)
+
+### Diagnosis and correction
+
+- The homepage showcase did initialize, load automatically, enter the `running` lifecycle state, and update its camera. The apparent lack of rotation came from a black lamp rendered over an opaque near-black WebGL clear colour, compounded by a restrained 0.00016-radian-per-millisecond turn rate. Before evidence retained under `deployment/evidence/ui-3d-parity/before/` shows that the mechanism and its motion were difficult to distinguish.
+- The shared canvas is now transparent over a neutral studio radial gradient, the black lamp and white preview both remain legible, and the turn rate is 0.0002 radians per millisecond (about one revolution every 31 seconds at an uninterrupted 60 fps). The final browser run captured different in-view homepage pixels 2.2 seconds apart, paused offscreen, resumed onscreen, and stayed in the `paused` lifecycle state under emulated reduced motion.
+- The poster was regenerated at 1200×900 from the same renderer, camera, pose, black finish, cool light, and final studio background. It is 10,236 bytes. Presentation continues to suppress both external lead meshes by default; the controller and USB detail remain available.
+- The customer-facing footer no longer exposes a **Sitemap** link. `/sitemap.xml` remains available and publication-filtered for search-engine discovery.
+
+### Authoritative viewer feature-parity checklist
+
+| Original function | Product-page equivalent | Result |
+|---|---|---|
+| Perspective, Front, Fit all | Engineering camera buttons | Preserved |
+| Controller, clamp-base, light-head close-ups | Three Engineering inspection buttons | Preserved |
+| Auto rotate complete lamp | Engineering checkbox; reduced motion overrides it | Preserved |
+| Mouse/touch orbit and two-pointer pinch | Deliberate drag orbit and pinch zoom with `touch-action: pan-y` | Preserved without mobile scroll trapping |
+| Shift-drag pan, wheel zoom | Shift-drag pan; focused-canvas or browser-pinch wheel zoom | Preserved with storefront-safe wheel capture |
+| Zoom range 0.1–6 and reset | Same renderer range, dedicated zoom and Reset View controls | Preserved |
+| Lower/upper arm, neck, head roll, base swivel, clamp jaw | Six bounded Engineering sliders with source limits | Preserved |
+| Study, Reach, Tall, Low, Wide, Folded | Six Engineering pose buttons plus Reset pose | Preserved |
+| Black/white visual finish | Always-visible Preview finish controls | Preserved and explicitly non-purchasable |
+| Cool 6000 K, neutral 4500 K, warm 3000 K, off | White, Neutral, Warm, Off preview controls | Preserved without adding product specifications |
+| Renderer brightness 1–10 | Engineering **simulation intensity** slider | Preserved and explicitly not a ten-level product claim |
+| Five physical brightness positions | Always-visible 1–5 preview mapped to renderer 2/4/6/8/10 | Preserved customer contract |
+| Toggle exploded anatomy and 0–100 separation | Engineering toggle and separation slider | Preserved |
+| Separate clamp components | Engineering action using source selection, jaw, camera, and exploded state | Preserved |
+| Anatomy colours and clickable labels | Toggle plus nine keyboard-focusable part labels | Preserved |
+| Part highlight, isolate, focus, descriptions | Ten-option selector (complete lamp plus nine groups), isolate and focus controls | Preserved |
+| External lead/controller inspection | Engineering-only lead toggle, including the source procedural Bézier tube and static USB lead | Preserved; leads intentionally default hidden |
+| Context loss and teardown | Poster fallback, loop/listener/GPU cleanup | Storefront-safe enhancement |
+
+No original user-facing model function is omitted. Two deliberate storefront differences remain: external leads reset hidden rather than visible, and ordinary wheel scrolling is not captured until the canvas is focused (or the event represents browser pinch). These changes satisfy the presentation and page-scroll requirements without altering source geometry, pivots, ranges, materials, or mechanisms. The source HTML remains byte-identical at SHA-256 `32f54a79d4a3e6fe96fb8ec207c7c299bb9e15cf8df6ef11cc900dcfdf0639d6`.
+
+### Final isolated evidence
+
+- The exact production build ran against a disposable seeded SQLite database with array cache/session/mail and a synchronous queue. The development database and real records were not modified.
+- `deployment/evidence/ui-3d-parity/after/` contains homepage rotation start/end, mobile reduced-motion start/end, black and white angles, wire inspection, separated clamp, exploded anatomy, loading failure, supplied-viewer comparisons, and `browser-transfer-report.json`.
+- Final measured transfers: product HTML 30,826 bytes; manifest 28,305 bytes; gzip model 4,370,023 bytes transferred and 19,234,224 bytes decoded. The raw recovery path transferred 19,234,387 bytes. Cold ready was 1,016 ms; the cache-disabled 4 Mbps down / 1.5 Mbps up / 150 ms latency scenario was 10,318 ms with the poster retained; local warm ready was 649 ms but the PHP development server refetched the model and supplied no immutable cache header.
+- Desktop Chromium software-WebGL and 390×844 mobile emulation verified the correct product link and keyboard activation, visible focus, no homepage gesture capture, product controls, shopping access, normal mobile scrolling, reduced-motion lifecycle, offscreen pause/resume, context-loss fallback, compressed-to-raw recovery, all-model failure, and absence of visible Sitemap links. Physical-device pinch, physical iOS/Android rendering, real background-tab suspension, and production-host caching remain unverified and require the Step 3 manual release checklist.

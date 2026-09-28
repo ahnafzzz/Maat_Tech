@@ -1,4 +1,4 @@
-import { DeskLampShowcaseRenderer } from './desk-lamp-renderer.js';
+import { DESK_LAMP_GROUPS, DeskLampShowcaseRenderer } from './desk-lamp-renderer.js';
 
 export const shouldCaptureOrbit = (deltaX, deltaY, threshold = 8) => (
     Math.abs(deltaX) >= threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.15
@@ -51,6 +51,8 @@ export class ProductShowroom {
                 { mode: 'showroom', autoRotate: !this.motion.matches },
             );
             this.renderer.setReducedMotion(this.motion.matches);
+            const autoRotate = this.element.querySelector('[data-showroom-input="autoRotate"]');
+            if (autoRotate && this.motion.matches) autoRotate.checked = false;
             this.updateActivity();
         } catch (error) {
             if (error?.name !== 'AbortError') this.fail();
@@ -67,6 +69,7 @@ export class ProductShowroom {
                 x: event.clientX,
                 y: event.clientY,
                 captured: event.pointerType === 'mouse',
+                panning: event.pointerType === 'mouse' && event.shiftKey,
             });
             if (event.pointerType === 'mouse') {
                 this.interact();
@@ -96,7 +99,8 @@ export class ProductShowroom {
                     this.canvas.setPointerCapture(event.pointerId);
                 }
                 if (next.captured) {
-                    this.renderer.orbit(event.clientX - pointer.x, event.clientY - pointer.y);
+                    if (next.panning || event.shiftKey) this.renderer.pan(event.clientX - pointer.x, event.clientY - pointer.y);
+                    else this.renderer.orbit(event.clientX - pointer.x, event.clientY - pointer.y);
                     event.preventDefault();
                 }
             }
@@ -137,9 +141,33 @@ export class ProductShowroom {
             if (action === 'finish') this.renderer.setFinish(value);
             if (action === 'light') this.renderer.setLight(value, this.brightnessLevel());
             if (action === 'zoom') this.renderer.zoomBy(Number(value));
+            if (action === 'camera') this.renderer.setCameraView(value);
+            if (action === 'fit') {
+                this.renderer.fitAll();
+                this.syncInspectionControls();
+            }
+            if (action === 'inspect') {
+                this.renderer.inspect(value, { elevation: value === 'clamp' ? 0.16 : 0 });
+                this.syncInspectionControls();
+            }
+            if (action === 'focus') this.renderer.fitSelection();
             if (action === 'preset') {
                 this.renderer.applyPreset(value);
                 this.syncPoseControls();
+            }
+            if (action === 'resetPose') {
+                this.renderer.resetPose();
+                this.syncAllControls();
+            }
+            if (action === 'explodeToggle') {
+                const next = this.renderer.snapshot().state.explode > 0 ? 0 : 75;
+                this.renderer.setExplode(next);
+                this.renderer.setAnatomy(next > 0);
+                this.syncAllControls();
+            }
+            if (action === 'separateClamp') {
+                this.renderer.separateClamp();
+                this.syncAllControls();
             }
             if (action === 'reset') this.reset();
             this.selectButton(control);
@@ -152,15 +180,30 @@ export class ProductShowroom {
             const name = control.dataset.showroomInput;
             if (name === 'brightness') {
                 this.renderer.setLight(this.selectedValue('light', 'cool'), Number(control.value));
+                const simulation = this.element.querySelector('[data-showroom-input="simulationBrightness"]');
+                if (simulation) simulation.value = String(Number(control.value) * 2);
             } else if (name === 'explode') {
                 this.renderer.setExplode(control.value);
             } else if (name === 'anatomy') {
                 this.renderer.setAnatomy(control.checked);
+            } else if (name === 'wires') {
+                this.renderer.setWires(control.checked);
+            } else if (name === 'autoRotate') {
+                if (this.motion.matches && control.checked) control.checked = false;
+                this.renderer.setAutoRotation(control.checked && !this.motion.matches);
+            } else if (name === 'selection') {
+                this.renderer.setSelection(control.value);
+                this.updatePartDescription(control.value);
+            } else if (name === 'isolate') {
+                this.renderer.setIsolate(control.checked);
+            } else if (name === 'simulationBrightness') {
+                this.renderer.setSimulationBrightness(control.value);
             } else {
                 this.renderer.setArticulation(name, control.value);
             }
             const output = this.element.querySelector(`[data-showroom-output="${name}"]`);
-            if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'brightness' ? ' / 5' : '°'}`;
+            if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'brightness' ? ' / 5' : name === 'simulationBrightness' ? ' / 10' : '°'}`;
+            this.updateActivity();
         };
         this.onVisibility = () => {
             this.documentVisible = !document.hidden;
@@ -208,10 +251,16 @@ export class ProductShowroom {
         });
         this.element.querySelectorAll('[data-showroom-input]').forEach((control) => {
             if (control.type === 'checkbox') control.checked = false;
-            else control.value = control.dataset.defaultValue;
-            control.dispatchEvent(new Event('input', { bubbles: true }));
+            else {
+                control.value = control.dataset.defaultValue;
+                const name = control.dataset.showroomInput;
+                const output = this.element.querySelector(`[data-showroom-output="${name}"]`);
+                if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'brightness' ? ' / 5' : name === 'simulationBrightness' ? ' / 10' : '°'}`;
+            }
         });
+        this.syncAllControls();
         this.renderLabels([]);
+        this.updateActivity();
     }
 
     syncPoseControls() {
@@ -223,6 +272,38 @@ export class ProductShowroom {
             control.value = state[name];
             if (output) output.textContent = `${state[name]}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : '°'}`;
         }
+    }
+
+    syncInspectionControls() {
+        const state = this.renderer.snapshot().state;
+        const selection = this.element.querySelector('[data-showroom-input="selection"]');
+        const isolate = this.element.querySelector('[data-showroom-input="isolate"]');
+        const wires = this.element.querySelector('[data-showroom-input="wires"]');
+        if (selection) selection.value = state.selection;
+        if (isolate) isolate.checked = state.isolate;
+        if (wires) wires.checked = state.wires;
+        this.updatePartDescription(state.selection);
+    }
+
+    syncAllControls() {
+        const state = this.renderer.snapshot().state;
+        this.syncPoseControls();
+        this.syncInspectionControls();
+        for (const name of ['anatomy', 'wires']) {
+            const control = this.element.querySelector(`[data-showroom-input="${name}"]`);
+            if (control) control.checked = Boolean(state[name]);
+        }
+        const simulation = this.element.querySelector('[data-showroom-input="simulationBrightness"]');
+        const simulationOutput = this.element.querySelector('[data-showroom-output="simulationBrightness"]');
+        if (simulation) simulation.value = state.brightness;
+        if (simulationOutput) simulationOutput.textContent = `${state.brightness} / 10`;
+    }
+
+    updatePartDescription(category) {
+        const description = this.element.querySelector('[data-showroom-part-description]');
+        if (description) description.textContent = category === 'all'
+            ? 'Complete articulated lamp assembly.'
+            : DESK_LAMP_GROUPS[category]?.description ?? 'Selected model group.';
     }
 
     selectButton(control) {
@@ -241,9 +322,13 @@ export class ProductShowroom {
 
     renderLabels(labels) {
         this.labels.replaceChildren(...labels.map((label) => {
-            const element = document.createElement('span');
+            const element = document.createElement('button');
+            element.type = 'button';
             element.className = 'showroom-part-label';
             element.textContent = label.label;
+            element.dataset.showroomAction = 'inspect';
+            element.dataset.showroomValue = label.category;
+            element.setAttribute('aria-label', `Inspect ${label.label}`);
             element.style.left = `${label.x}%`;
             element.style.top = `${label.y}%`;
             return element;
@@ -254,7 +339,7 @@ export class ProductShowroom {
         const active = this.visible && this.documentVisible;
         this.renderer?.setDocumentVisible(this.documentVisible);
         this.renderer?.setActive(active);
-        this.element.dataset.showroomAnimation = active && !this.motion.matches && !this.interacted ? 'running' : 'paused';
+        this.element.dataset.showroomAnimation = active && !this.motion.matches && Boolean(this.renderer?.snapshot().autoRotate) ? 'running' : 'paused';
     }
 
     fail() {
