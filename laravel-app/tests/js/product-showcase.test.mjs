@@ -65,12 +65,12 @@ test('power mode maps directly to the supplied renderer levels one through ten',
     assert.equal(powerModeLevel(11), 10);
 });
 
-test('slideshow automation pauses for reduced motion, hidden tabs, and offscreen content', () => {
+test('slideshow automation runs whenever the carousel is visible and onscreen', () => {
     assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: true, reducedMotion: false }), true);
     assert.equal(slideshowShouldAdvance({ documentVisible: false, onscreen: true, reducedMotion: false }), false);
     assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: false, reducedMotion: false }), false);
-    assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: true, reducedMotion: true }), false);
-    assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: true, reducedMotion: false, focusInside: true }), false);
+    assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: true, reducedMotion: true }), true);
+    assert.equal(slideshowShouldAdvance({ documentVisible: true, onscreen: true, reducedMotion: false, focusInside: true }), true);
 });
 
 test('media tab keyboard navigation wraps and supports first and last shortcuts', () => {

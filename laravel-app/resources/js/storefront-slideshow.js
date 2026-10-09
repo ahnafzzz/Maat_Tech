@@ -1,5 +1,5 @@
-export const slideshowShouldAdvance = ({ documentVisible, onscreen, reducedMotion, focusInside = false }) => (
-    documentVisible && onscreen && !reducedMotion && !focusInside
+export const slideshowShouldAdvance = ({ documentVisible, onscreen }) => (
+    documentVisible && onscreen
 );
 
 export class StorefrontSlideshow {
@@ -9,13 +9,13 @@ export class StorefrontSlideshow {
         this.dots = [...element.querySelectorAll('[data-slideshow-dot]')];
         this.previous = element.querySelector('[data-slideshow-previous]');
         this.next = element.querySelector('[data-slideshow-next]');
-        this.interval = Number(element.dataset.slideshowInterval) || 5000;
-        this.motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        this.interval = Number(element.dataset.slideshowInterval) || 3000;
         this.documentVisible = !document.hidden;
         this.onscreen = true;
-        this.focusInside = false;
         this.index = Math.max(0, this.slides.findIndex((slide) => slide.dataset.active === 'true'));
         this.timer = null;
+        this.swipeStart = null;
+        this.suppressClickUntil = 0;
         this.observer = 'IntersectionObserver' in window
             ? new IntersectionObserver(([entry]) => {
                 this.onscreen = entry.isIntersecting && entry.intersectionRatio > 0;
@@ -26,15 +26,30 @@ export class StorefrontSlideshow {
         this.onPrevious = () => this.show(this.index - 1, { manual: true });
         this.onNext = () => this.show(this.index + 1, { manual: true });
         this.onDotClick = (event) => this.show(Number(event.currentTarget.dataset.slideshowDot), { manual: true });
+        this.onTouchStart = (event) => {
+            if (event.touches.length !== 1) return;
+            const touch = event.touches[0];
+            this.swipeStart = { x: touch.clientX, y: touch.clientY };
+        };
+        this.onTouchEnd = (event) => {
+            if (!this.swipeStart || event.changedTouches.length !== 1) return;
+            const touch = event.changedTouches[0];
+            const deltaX = touch.clientX - this.swipeStart.x;
+            const deltaY = touch.clientY - this.swipeStart.y;
+            this.swipeStart = null;
+
+            if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return;
+            this.suppressClickUntil = performance.now() + 500;
+            this.show(this.index + (deltaX < 0 ? 1 : -1), { manual: true });
+        };
+        this.onTouchCancel = () => { this.swipeStart = null; };
+        this.onClick = (event) => {
+            if (performance.now() >= this.suppressClickUntil) return;
+            event.preventDefault();
+            event.stopPropagation();
+        };
         this.onVisibility = () => {
             this.documentVisible = !document.hidden;
-            this.schedule();
-        };
-        this.onMotion = () => this.schedule();
-        this.onFocusIn = () => { this.focusInside = true; this.schedule(); };
-        this.onFocusOut = (event) => {
-            if (this.element.contains(event.relatedTarget)) return;
-            this.focusInside = false;
             this.schedule();
         };
         this.onPageHide = (event) => {
@@ -54,12 +69,11 @@ export class StorefrontSlideshow {
         this.previous?.addEventListener('click', this.onPrevious);
         this.next?.addEventListener('click', this.onNext);
         this.dots.forEach((dot) => dot.addEventListener('click', this.onDotClick));
-        this.element.addEventListener('focusin', this.onFocusIn);
-        this.element.addEventListener('focusout', this.onFocusOut);
-        this.element.addEventListener('focus', this.onFocusIn, true);
-        this.element.addEventListener('blur', this.onFocusOut, true);
+        this.element.addEventListener('touchstart', this.onTouchStart, { passive: true });
+        this.element.addEventListener('touchend', this.onTouchEnd, { passive: true });
+        this.element.addEventListener('touchcancel', this.onTouchCancel, { passive: true });
+        this.element.addEventListener('click', this.onClick, true);
         document.addEventListener('visibilitychange', this.onVisibility);
-        this.motion.addEventListener?.('change', this.onMotion);
         window.addEventListener('pagehide', this.onPageHide);
         window.addEventListener('pageshow', this.onPageShow);
         this.observer?.observe(this.element);
@@ -96,8 +110,6 @@ export class StorefrontSlideshow {
         const running = slideshowShouldAdvance({
             documentVisible: this.documentVisible,
             onscreen: this.onscreen,
-            reducedMotion: this.motion.matches,
-            focusInside: this.focusInside,
         });
         this.element.dataset.slideshowAnimation = running ? 'running' : 'paused';
         if (!running || this.slides.length < 2) return;
@@ -110,12 +122,11 @@ export class StorefrontSlideshow {
         this.previous?.removeEventListener('click', this.onPrevious);
         this.next?.removeEventListener('click', this.onNext);
         this.dots.forEach((dot) => dot.removeEventListener('click', this.onDotClick));
-        this.element.removeEventListener('focusin', this.onFocusIn);
-        this.element.removeEventListener('focusout', this.onFocusOut);
-        this.element.removeEventListener('focus', this.onFocusIn, true);
-        this.element.removeEventListener('blur', this.onFocusOut, true);
+        this.element.removeEventListener('touchstart', this.onTouchStart);
+        this.element.removeEventListener('touchend', this.onTouchEnd);
+        this.element.removeEventListener('touchcancel', this.onTouchCancel);
+        this.element.removeEventListener('click', this.onClick, true);
         document.removeEventListener('visibilitychange', this.onVisibility);
-        this.motion.removeEventListener?.('change', this.onMotion);
         window.removeEventListener('pagehide', this.onPageHide);
         window.removeEventListener('pageshow', this.onPageShow);
         delete this.element.dataset.slideshowInitialized;

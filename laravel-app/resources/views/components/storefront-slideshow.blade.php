@@ -11,7 +11,7 @@
 <section
     class="storefront-slideshow relative w-full overflow-hidden border-b border-cyber-border bg-[#080b10]"
     data-storefront-slideshow
-    data-slideshow-interval="5000"
+    data-slideshow-interval="3000"
     data-slideshow-index="0"
     data-slideshow-animation="paused"
     aria-roledescription="carousel"
@@ -79,14 +79,12 @@
             </article>
         @endforeach
 
-        <div class="absolute inset-x-0 bottom-0 z-20 flex h-14 items-center justify-between gap-3 border-t border-cyber-border bg-[#090d14]/95 px-3 backdrop-blur sm:px-5">
-            <button type="button" data-slideshow-previous aria-label="Previous slide" class="grid h-11 w-11 shrink-0 place-items-center border border-slate-700 text-slate-200 outline-none transition hover:border-tech-500 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="chevron-left" class="h-5 w-5"></i></button>
+        <div class="absolute inset-x-0 bottom-0 z-20 flex h-14 items-center justify-center border-t border-cyber-border bg-[#090d14]/95 px-3 backdrop-blur sm:px-5">
             <div class="flex min-w-0 items-center justify-center gap-1.5" aria-label="Choose a slide">
                 @foreach (range(0, $slideCount - 1) as $index)
                     <button type="button" data-slideshow-dot="{{ $index }}" aria-current="{{ $index === 0 ? 'true' : 'false' }}" aria-label="{{ $index === 0 ? 'Current slide' : 'Go to slide' }} {{ $index + 1 }}" class="h-3 w-3 rounded-full border border-slate-500 bg-slate-800 outline-none transition aria-[current=true]:border-tech-300 aria-[current=true]:bg-tech-400 focus-visible:ring-2 focus-visible:ring-tech-300"></button>
                 @endforeach
             </div>
-            <button type="button" data-slideshow-next aria-label="Next slide" class="grid h-11 w-11 shrink-0 place-items-center border border-slate-700 text-slate-200 outline-none transition hover:border-tech-500 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="chevron-right" class="h-5 w-5"></i></button>
         </div>
     </div>
 </section>

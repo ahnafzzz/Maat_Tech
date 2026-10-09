@@ -109,7 +109,9 @@ class HomePageTest extends TestCase
 
         $response = $this->get('/')->assertOk()
             ->assertSee('data-storefront-slideshow', false)
-            ->assertSee('data-slideshow-interval="5000"', false)
+            ->assertSee('data-slideshow-interval="3000"', false)
+            ->assertDontSee('data-slideshow-previous', false)
+            ->assertDontSee('data-slideshow-next', false)
             ->assertSee('aspect-video', false)
             ->assertSee(route('products.show', $product->slug), false)
             ->assertDontSee('data-slideshow-pause', false)
