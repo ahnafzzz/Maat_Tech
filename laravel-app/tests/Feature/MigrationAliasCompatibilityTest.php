@@ -293,7 +293,7 @@ class MigrationAliasCompatibilityTest extends TestCase
         $schema = DB::connection()->getSchemaBuilder();
         $this->assertContains('categories_slug_unique', collect($schema->getIndexes('categories'))->pluck('name')->all());
         $this->assertContains('orders_order_number_unique', collect($schema->getIndexes('orders'))->pluck('name')->all());
-        $this->assertContains('cart_items_cart_id_product_id_unique', collect($schema->getIndexes('cart_items'))->pluck('name')->all());
+        $this->assertContains('cart_items_cart_product_variant_unique', collect($schema->getIndexes('cart_items'))->pluck('name')->all());
 
         try {
             DB::table('categories')->insert([

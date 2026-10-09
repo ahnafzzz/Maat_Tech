@@ -7,6 +7,7 @@ use App\Models\Admin;
 use App\Models\AdminTwoFactorChallenge;
 use App\Notifications\AdminTwoFactorCodeNotification;
 use App\Services\AdminTwoFactorService;
+use App\Services\AdminSessionVersion;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Notifications\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -270,5 +271,63 @@ class AdminTwoFactorChallengeTest extends TestCase
         $this->assertSame($passwordHash, $admin->password);
         $this->assertSame($sessionVersion, $admin->session_version);
         $this->assertTrue(Schema::hasTable('admin_two_factor_challenges'));
+    }
+
+    public function test_enrollment_requires_password_and_verified_email_code_before_protected_writes(): void
+    {
+        $admin = $this->admin(['two_factor_enabled' => false]);
+        $this->actingAs($admin, 'admin')->withSession([
+            AdminSessionVersion::SESSION_KEY => $admin->session_version,
+        ]);
+
+        $this->post(route('admin.two-factor.toggle'), [
+            'current_password' => 'wrong-password',
+            'enabled' => 1,
+        ])->assertSessionHasErrors('current_password');
+        $this->assertFalse($admin->fresh()->two_factor_enabled);
+
+        $this->post(route('admin.two-factor.toggle'), [
+            'current_password' => self::PASSWORD,
+            'enabled' => 1,
+        ])->assertRedirect(route('admin.two-factor.enrollment'));
+        $this->assertTrue($admin->fresh()->two_factor_enabled);
+        $this->assertTrue((bool) session('admin_two_factor_enrollment_pending'));
+        $this->get(route('admin.products'))->assertOk()->assertSee('All management pages are visible');
+        $this->post(route('admin.categories.store'), ['name' => 'Blocked Category'])
+            ->assertRedirect(route('admin.dashboard'));
+        $this->assertDatabaseMissing('categories', ['name' => 'Blocked Category']);
+
+        $notification = Notification::sent($admin, AdminTwoFactorCodeNotification::class)->last();
+        $this->assertInstanceOf(AdminTwoFactorCodeNotification::class, $notification);
+        $this->post(route('admin.two-factor.enrollment.verify'), ['code' => $notification->code()])
+            ->assertRedirect(route('admin.dashboard'));
+
+        $this->assertFalse((bool) session('admin_two_factor_enrollment_pending'));
+        $this->assertNotNull(session('admin_two_factor_verified_at'));
+        $this->get(route('admin.products'))->assertOk();
+    }
+
+    public function test_disabling_two_factor_requires_current_password_and_a_fresh_second_factor(): void
+    {
+        $admin = $this->admin();
+        $this->actingAs($admin, 'admin')->withSession([
+            AdminSessionVersion::SESSION_KEY => $admin->session_version,
+            'admin_two_factor_verified_at' => now()->subHour()->timestamp,
+        ]);
+
+        $this->post(route('admin.two-factor.toggle'), [
+            'current_password' => self::PASSWORD,
+            'enabled' => 0,
+        ])->assertSessionHasErrors('current_password');
+        $this->assertTrue($admin->fresh()->two_factor_enabled);
+
+        $this->withSession(['admin_two_factor_verified_at' => now()->timestamp])
+            ->post(route('admin.two-factor.toggle'), [
+                'current_password' => self::PASSWORD,
+                'enabled' => 0,
+            ])->assertSessionHas('status');
+
+        $this->assertFalse($admin->fresh()->two_factor_enabled);
+        $this->assertNull(session('admin_two_factor_verified_at'));
     }
 }

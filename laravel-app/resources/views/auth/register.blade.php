@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Create Account | MAAT Technologies BD</title>
-    @vite('resources/css/app.css')
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>Create Account | {{ $storefrontSettings->site_name }}</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-[#090b10] font-sans text-white">
     <div class="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(38,49,65,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(38,49,65,.35)_1px,transparent_1px)] [background-size:42px_42px]"></div>
@@ -15,9 +14,9 @@
             @csrf
 
             <a href="{{ route('home') }}" class="flex items-center gap-3">
-                <span class="grid h-9 w-9 place-items-center border border-tech-400 bg-tech-600"><i data-lucide="cpu" class="h-5 w-5"></i></span>
+                <img src="{{ $storefrontSettings->logoUrl() }}" alt="{{ $storefrontSettings->logo_alt }}" class="h-14 w-16 shrink-0 object-contain [filter:drop-shadow(0_0_7px_rgba(45,212,191,.28))]">
                 <span>
-                    <strong class="block font-mono text-lg">MAAT Technologies BD</strong>
+                    <strong class="block font-mono text-lg">{{ $storefrontSettings->site_name }}</strong>
                     <small class="font-mono text-[9px] tracking-[.18em] text-tech-400">ACCOUNT_CREATION</small>
                 </span>
             </a>
@@ -43,6 +42,5 @@
         </form>
     </main>
 
-    <script>lucide.createIcons();</script>
 </body>
 </html>

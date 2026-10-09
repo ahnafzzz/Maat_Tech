@@ -27,6 +27,8 @@ Customer and product foreign keys on historical orders use `null on delete`. The
 
 ## Administrator bootstrap and credential remediation
 
+The protected administrator login is `/admin/login` (production: `https://www.maattechbd.store/admin/login`). It is deliberately not linked from customer-facing pages. See [`docs/PRODUCTION_OPERATIONS.md`](docs/PRODUCTION_OPERATIONS.md) for deployment prerequisites, domain redirects, backup/restore, queue/scheduler, and maintenance procedures.
+
 Ordinary `db:seed` execution creates catalog records only. It does not create customer or administrator accounts. Deployment and container startup do not run seeders automatically; catalog seeding is an explicit operator action.
 
 After migrations have completed, create the first lead administrator from a trusted application console:

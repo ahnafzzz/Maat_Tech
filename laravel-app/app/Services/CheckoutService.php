@@ -44,18 +44,20 @@ class CheckoutService
 
     public function shippingFeeMinor(string $district): int
     {
-        return $this->normalizeDistrict($district) === 'Dhaka' ? 8000 : 14000;
+        $this->normalizeDistrict($district);
+
+        return 0;
     }
 
     public function preview(Collection $items, ?string $district): array
     {
         $subtotalMinor = $items->sum(fn (array $item) => $this->effectivePriceMinor($item['product']) * $item['quantity']);
-        $shippingMinor = $district ? $this->shippingFeeMinor($district) : null;
+        $shippingMinor = $district ? $this->shippingFeeMinor($district) : 0;
 
         return [
             'subtotal' => $this->minorToDecimal($subtotalMinor),
-            'shippingFee' => $shippingMinor === null ? null : $this->minorToDecimal($shippingMinor),
-            'total' => $shippingMinor === null ? null : $this->minorToDecimal($subtotalMinor + $shippingMinor),
+            'shippingFee' => $this->minorToDecimal($shippingMinor),
+            'total' => $this->minorToDecimal($subtotalMinor + $shippingMinor),
         ];
     }
 
@@ -64,11 +66,16 @@ class CheckoutService
         array $guestCart,
         array $details,
         string $attemptKey,
-        ?string $guestIdentity = null
+        ?string $guestIdentity = null,
+        ?array $directLines = null,
     ): CheckoutResult {
         $details = $this->normalizedDetails($details);
         [$ownerType, $ownerIdentifier] = $this->attemptOwner($customer, $guestIdentity);
-        $fingerprint = hash('sha256', json_encode($details, JSON_THROW_ON_ERROR));
+        $normalizedDirectLines = $directLines === null ? null : $this->validatedGuestCart($directLines);
+        $fingerprint = hash('sha256', json_encode([
+            'details' => $details,
+            'direct_lines' => $normalizedDirectLines,
+        ], JSON_THROW_ON_ERROR));
 
         try {
             return DB::transaction(function () use (
@@ -78,7 +85,8 @@ class CheckoutService
                 $attemptKey,
                 $ownerType,
                 $ownerIdentifier,
-                $fingerprint
+                $fingerprint,
+                $normalizedDirectLines,
             ): CheckoutResult {
                 if ($customer) {
                     User::whereKey($customer->id)->lockForUpdate()->firstOrFail();
@@ -101,15 +109,15 @@ class CheckoutService
                     'fingerprint' => $fingerprint,
                 ]);
 
-                [$quantities, $cartItemIds] = $customer
-                    ? $this->lockedCustomerCart($customer)
-                    : [$this->validatedGuestCart($guestCart), []];
+                [$lines, $cartItemIds] = $normalizedDirectLines !== null
+                    ? [$normalizedDirectLines, []]
+                    : ($customer ? $this->lockedCustomerCart($customer) : [$this->validatedGuestCart($guestCart), []]);
 
-                if ($quantities === []) {
+                if ($lines === []) {
                     throw ValidationException::withMessages(['cart' => 'Your cart is empty.']);
                 }
 
-                $productIds = array_keys($quantities);
+                $productIds = array_values(array_unique(array_column($lines, 'product_id')));
                 sort($productIds, SORT_NUMERIC);
                 $products = Product::whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
@@ -119,14 +127,19 @@ class CheckoutService
 
                 $subtotalMinor = 0;
                 $snapshot = [];
-                foreach ($productIds as $productId) {
+                foreach ($lines as $line) {
+                    $productId = $line['product_id'];
                     $product = $products->get($productId);
-                    $quantity = $quantities[$productId];
+                    $quantity = $line['quantity'];
                     if ($product->status !== 'active') {
                         throw ValidationException::withMessages(['cart' => 'A product in your cart is no longer available.']);
                     }
-                    if ($product->stock < $quantity) {
-                        throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
+                    $variant = $product->purchasableVariant($line['variant_key']);
+                    if (! $variant || ! $variant['available']) {
+                        throw ValidationException::withMessages(['cart' => "The selected color for $product->name is no longer available."]);
+                    }
+                    if ($variant['stock'] < $quantity) {
+                        throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name{$this->variantSuffix($variant['label'])}."]);
                     }
                     $unitPriceMinor = $this->effectivePriceMinor($product);
                     $subtotalMinor += $unitPriceMinor * $quantity;
@@ -134,6 +147,8 @@ class CheckoutService
                         'product_id' => $productId,
                         'product_name' => $product->name,
                         'product_sku' => $product->sku ?: 'SKU unavailable',
+                        'variant_key' => $variant['key'] ?: null,
+                        'variant_label' => $variant['label'],
                         'quantity' => $quantity,
                         'unit_price' => $this->minorToDecimal($unitPriceMinor),
                     ];
@@ -153,16 +168,42 @@ class CheckoutService
                     'shipping_address' => ['name' => $details['name'], 'phone' => $details['phone'],
                         'district' => $details['district'], 'city' => $details['district'], 'address' => $details['address']],
                     'placed_at' => now(),
+                    'expires_at' => now()->addHours((int) config('site.pending_order_expiry_hours', 48)),
                 ]);
 
                 foreach ($snapshot as $item) {
-                    $product = $products->get($item['product_id']);
                     $order->items()->create($item);
-                    $updated = Product::whereKey($item['product_id'])->where('stock', '>=', $item['quantity'])
-                        ->update(['stock' => DB::raw('stock - '.(int) $item['quantity'])]);
-                    if ($updated !== 1) {
-                        throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
+                }
+
+                foreach (collect($snapshot)->groupBy('product_id') as $productId => $productLines) {
+                    $product = $products->get($productId);
+                    $variants = $product->purchasableVariants();
+                    if ($variants === []) {
+                        $quantity = $productLines->sum('quantity');
+                        $updated = Product::whereKey($productId)->where('stock', '>=', $quantity)
+                            ->update(['stock' => DB::raw('stock - '.(int) $quantity)]);
+                        if ($updated !== 1) {
+                            throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name."]);
+                        }
+                        continue;
                     }
+
+                    foreach ($productLines as $item) {
+                        foreach ($variants as &$variant) {
+                            if ($variant['key'] === $item['variant_key']) {
+                                if (! $variant['available'] || $variant['stock'] < $item['quantity']) {
+                                    throw ValidationException::withMessages(['cart' => "Insufficient stock for $product->name{$this->variantSuffix($variant['label'])}."]);
+                                }
+                                $variant['stock'] -= $item['quantity'];
+                                break;
+                            }
+                        }
+                        unset($variant);
+                    }
+                    $product->forceFill([
+                        'variants' => $variants,
+                        'stock' => collect($variants)->where('available', true)->sum('stock'),
+                    ])->save();
                 }
 
                 if ($cartItemIds !== []) {
@@ -200,10 +241,19 @@ class CheckoutService
 
     private function normalizedDetails(array $details): array
     {
+        $phone = trim((string) $details['phone']);
+        if (preg_match('/^(?:\+?880|0)1[3-9]\d{8}$/D', $phone) !== 1) {
+            throw ValidationException::withMessages(['phone' => 'Enter a valid Bangladesh mobile number.']);
+        }
+        $address = trim((string) $details['address']);
+        if (mb_strlen($address) < 10) {
+            throw ValidationException::withMessages(['address' => 'Enter a complete delivery address.']);
+        }
+
         return [
             'name' => trim((string) $details['name']),
-            'phone' => trim((string) $details['phone']),
-            'address' => trim((string) $details['address']),
+            'phone' => $phone,
+            'address' => $address,
             'district' => $this->normalizeDistrict((string) $details['district']),
             'customer_note' => isset($details['customer_note']) && trim((string) $details['customer_note']) !== ''
                 ? trim((string) $details['customer_note'])
@@ -253,34 +303,59 @@ class CheckoutService
         if (! $cart) {
             return [[], []];
         }
-        $items = CartItem::where('cart_id', $cart->id)->orderBy('product_id')->lockForUpdate()->get();
-        $quantities = [];
+        $items = CartItem::where('cart_id', $cart->id)->orderBy('product_id')->orderBy('variant_key')->lockForUpdate()->get();
+        $lines = [];
         foreach ($items as $item) {
             if (! is_int($item->quantity) || $item->quantity <= 0) {
                 throw ValidationException::withMessages(['cart' => 'Cart quantities must be positive whole numbers.']);
             }
-            $quantities[$item->product_id] = $item->quantity;
+            $lines[] = [
+                'product_id' => (int) $item->product_id,
+                'variant_key' => (string) $item->variant_key,
+                'variant_label' => $item->variant_label,
+                'quantity' => $item->quantity,
+            ];
         }
 
-        return [$quantities, $items->pluck('id')->all()];
+        return [$lines, $items->pluck('id')->all()];
     }
 
     private function validatedGuestCart(array $cart): array
     {
-        $quantities = [];
-        foreach ($cart as $productId => $quantity) {
-            if (! ctype_digit((string) $productId) || ! is_int($quantity) || $quantity <= 0) {
+        $lines = [];
+        foreach ($cart as $key => $entry) {
+            if (ctype_digit((string) $key) && is_int($entry) && $entry > 0) {
+                $lines[] = ['product_id' => (int) $key, 'variant_key' => '', 'variant_label' => null, 'quantity' => $entry];
+                continue;
+            }
+            if (! is_array($entry) || ! isset($entry['product_id'], $entry['quantity'])
+                || ! ctype_digit((string) $entry['product_id']) || ! is_int($entry['quantity']) || $entry['quantity'] <= 0) {
                 throw ValidationException::withMessages(['cart' => 'Cart quantities must be positive whole numbers.']);
             }
-            $quantities[(int) $productId] = ($quantities[(int) $productId] ?? 0) + $quantity;
+            $variantKey = (string) ($entry['variant_key'] ?? '');
+            if ($variantKey !== '' && preg_match('/^[a-z0-9][a-z0-9-]{0,79}$/D', $variantKey) !== 1) {
+                throw ValidationException::withMessages(['cart' => 'The cart contains an invalid product variation.']);
+            }
+            $lines[] = [
+                'product_id' => (int) $entry['product_id'],
+                'variant_key' => $variantKey,
+                'variant_label' => isset($entry['variant_label']) ? (string) $entry['variant_label'] : null,
+                'quantity' => $entry['quantity'],
+            ];
         }
 
-        return $quantities;
+        return collect($lines)->groupBy(fn (array $line) => $line['product_id'].'|'.$line['variant_key'])
+            ->map(function (Collection $group): array {
+                $line = $group->first();
+                $line['quantity'] = $group->sum('quantity');
+
+                return $line;
+            })->values()->all();
     }
 
     private function effectivePriceMinor(Product $product): int
     {
-        return max(0, $this->decimalToMinor((string) $product->price) - $this->decimalToMinor((string) $product->discount_amount));
+        return $product->finalPriceMinor();
     }
 
     private function decimalToMinor(string $amount): int
@@ -296,5 +371,10 @@ class CheckoutService
     private function minorToDecimal(int $minor): string
     {
         return sprintf('%d.%02d', intdiv($minor, 100), abs($minor % 100));
+    }
+
+    private function variantSuffix(?string $label): string
+    {
+        return $label ? ' ('.$label.')' : '';
     }
 }

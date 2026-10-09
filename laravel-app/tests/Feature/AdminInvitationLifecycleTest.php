@@ -38,6 +38,7 @@ class AdminInvitationLifecycleTest extends TestCase
             'is_lead' => false,
             'status' => 'active',
             'session_version' => Str::random(64),
+            'two_factor_enabled' => true,
         ], $attributes));
     }
 

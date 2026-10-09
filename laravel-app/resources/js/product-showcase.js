@@ -21,12 +21,23 @@ export class ProductShowcaseManager {
         };
         this.onMotionChange = () => {
             for (const state of this.states.values()) {
+                state.rotationRequested = !this.motion.matches;
+                state.explicitMotionChoice = false;
                 state.renderer?.setReducedMotion(this.motion.matches);
-                this.setStatus(state, this.motion.matches ? 'Stationary 3D preview' : '3D preview');
+                state.renderer?.setAutoRotation(state.rotationRequested);
                 this.updateActivity(state);
             }
         };
-        this.onPageHide = () => this.destroy();
+        this.onPageHide = (event) => {
+            if (!event.persisted) return this.destroy();
+            this.documentVisible = false;
+            for (const state of this.states.values()) this.updateActivity(state);
+        };
+        this.onPageShow = (event) => {
+            if (!event.persisted) return;
+            this.documentVisible = !document.hidden;
+            for (const state of this.states.values()) this.updateActivity(state);
+        };
     }
 
     start() {
@@ -38,22 +49,30 @@ export class ProductShowcaseManager {
                 poster,
                 canvas: element.querySelector('[data-showcase-canvas]'),
                 status: element.querySelector('[data-showcase-status]'),
+                rotationToggle: element.querySelector('[data-showcase-rotation-toggle]'),
                 visible: element.dataset.showcasePriority === 'initial',
                 renderer: null,
                 controller: null,
                 loading: false,
                 failed: false,
                 loadedAt: 0,
+                rotationRequested: !this.motion.matches,
+                explicitMotionChoice: false,
             };
+            element.dataset.showcaseInitialized = 'true';
+            state.onRotationToggle = () => this.toggleRotation(state);
+            state.rotationToggle?.addEventListener('click', state.onRotationToggle);
             poster?.addEventListener('error', () => this.useImageFallback(state), { once: true });
             this.states.set(element, state);
+            this.syncPresentation(state);
             this.visibilityObserver?.observe(element);
             if (element.dataset.showcasePriority === 'initial' || !this.preloadObserver) this.load(state);
             else this.preloadObserver.observe(element);
         }
         document.addEventListener('visibilitychange', this.onDocumentVisibility);
         this.motion.addEventListener?.('change', this.onMotionChange);
-        window.addEventListener('pagehide', this.onPageHide, { once: true });
+        window.addEventListener('pagehide', this.onPageHide);
+        window.addEventListener('pageshow', this.onPageShow);
 
         return this;
     }
@@ -85,7 +104,7 @@ export class ProductShowcaseManager {
         candidate.renderer.destroy();
         candidate.renderer = null;
         candidate.element.dataset.showcaseState = 'poster';
-        candidate.element.dataset.showcaseAnimation = 'paused';
+        this.syncPresentation(candidate);
         this.setStatus(candidate, '3D preview paused');
 
         return true;
@@ -105,7 +124,7 @@ export class ProductShowcaseManager {
                 {
                     onFirstFrame: () => {
                         state.element.dataset.showcaseState = 'ready';
-                        this.setStatus(state, this.motion.matches ? 'Stationary 3D preview' : '3D preview');
+                        this.syncPresentation(state);
                     },
                     onError: () => this.fail(state),
                 },
@@ -114,6 +133,9 @@ export class ProductShowcaseManager {
             state.loadedAt = performance.now();
             state.failed = false;
             state.renderer.setReducedMotion(this.motion.matches);
+            state.renderer.setAutoRotation(state.rotationRequested, {
+                overrideReducedMotion: this.motion.matches && state.explicitMotionChoice && state.rotationRequested,
+            });
             this.updateActivity(state);
         } catch (error) {
             if (error?.name !== 'AbortError') this.fail(state);
@@ -124,9 +146,43 @@ export class ProductShowcaseManager {
 
     updateActivity(state) {
         const active = state.visible && this.documentVisible;
+        state.element.dataset.showcaseVisibility = state.visible ? 'onscreen' : 'offscreen';
+        state.element.dataset.showcaseDocument = this.documentVisible ? 'visible' : 'hidden';
         state.renderer?.setDocumentVisible(this.documentVisible);
         state.renderer?.setActive(active);
-        state.element.dataset.showcaseAnimation = active && !this.motion.matches ? 'running' : 'paused';
+        this.syncPresentation(state);
+    }
+
+    toggleRotation(state) {
+        state.rotationRequested = !state.rotationRequested;
+        state.explicitMotionChoice = true;
+        state.renderer?.setAutoRotation(state.rotationRequested, {
+            overrideReducedMotion: this.motion.matches && state.rotationRequested,
+        });
+        this.updateActivity(state);
+    }
+
+    syncPresentation(state) {
+        const snapshot = state.renderer?.snapshot();
+        const running = Boolean(
+            state.element.dataset.showcaseState === 'ready'
+            && state.visible
+            && this.documentVisible
+            && snapshot?.autoRotate
+            && (!this.motion.matches || snapshot.motionOverride)
+        );
+        state.element.dataset.showcaseAnimation = running ? 'running' : 'paused';
+
+        if (state.rotationToggle) {
+            state.rotationToggle.disabled = !state.renderer || state.failed;
+            state.rotationToggle.setAttribute('aria-pressed', state.rotationRequested ? 'true' : 'false');
+            state.rotationToggle.textContent = state.rotationRequested ? 'Pause rotation' : 'Play rotation';
+        }
+
+        if (state.element.dataset.showcaseState !== 'ready') return;
+        if (running) this.setStatus(state, 'Rotating 3D preview');
+        else if (this.motion.matches && !state.rotationRequested) this.setStatus(state, 'Stationary 3D preview');
+        else this.setStatus(state, '3D preview paused');
     }
 
     fail(state) {
@@ -135,6 +191,7 @@ export class ProductShowcaseManager {
         state.failed = true;
         state.element.dataset.showcaseState = 'fallback';
         state.element.dataset.showcaseAnimation = 'paused';
+        if (state.rotationToggle) state.rotationToggle.disabled = true;
         this.setStatus(state, 'Product preview');
     }
 
@@ -152,14 +209,20 @@ export class ProductShowcaseManager {
         this.visibilityObserver?.disconnect();
         document.removeEventListener('visibilitychange', this.onDocumentVisibility);
         this.motion.removeEventListener?.('change', this.onMotionChange);
+        window.removeEventListener('pagehide', this.onPageHide);
+        window.removeEventListener('pageshow', this.onPageShow);
         for (const state of this.states.values()) {
             state.controller?.abort();
             state.renderer?.destroy();
+            state.rotationToggle?.removeEventListener('click', state.onRotationToggle);
+            delete state.element.dataset.showcaseInitialized;
         }
         this.states.clear();
     }
 }
 
 export function initializeProductShowcases(root = document) {
-    return new ProductShowcaseManager(root).start();
+    const manager = new ProductShowcaseManager(root);
+    const uninitialized = root.querySelector('[data-product-showcase][data-showcase-manifest]:not([data-showcase-initialized])');
+    return uninitialized ? manager.start() : null;
 }

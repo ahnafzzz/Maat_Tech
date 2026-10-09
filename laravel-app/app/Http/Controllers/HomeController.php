@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Banner;
 use App\Models\Product;
+use App\Models\StorefrontSetting;
 use App\Support\ProductShowcaseRegistry;
 use Illuminate\Http\Request;
 
@@ -11,13 +13,18 @@ class HomeController extends Controller
 {
     public function index(ProductShowcaseRegistry $showcaseRegistry)
     {
+        $storefrontSettings = StorefrontSetting::current();
         $featuredProducts = Product::published()->where('is_featured', true)->take(3)->get();
         $categories = Category::withCount(['products' => fn ($query) => $query->published()])
+            ->whereHas('products', fn ($query) => $query->published())
             ->orderBy('name')->take(4)->get();
         $featuredShowcases = $featuredProducts->mapWithKeys(
             fn (Product $product): array => [$product->id => $showcaseRegistry->forProduct($product)]
         );
-        $heroProduct = $featuredProducts->first(
+        $heroProduct = $storefrontSettings->featured_product_id
+            ? Product::published()->find($storefrontSettings->featured_product_id)
+            : null;
+        $heroProduct ??= $featuredProducts->first(
             fn (Product $product): bool => $featuredShowcases->get($product->id) !== null
         );
         foreach ($showcaseRegistry->productSlugs() as $slug) {
@@ -31,8 +38,9 @@ class HomeController extends Controller
         }
         $heroProduct ??= $featuredProducts->first();
         $heroShowcase = $heroProduct ? $showcaseRegistry->forProduct($heroProduct) : null;
+        $storefrontSlides = $storefrontSettings->slideshow_enabled ? Banner::visible()->get() : collect();
 
-        return view('home', compact('categories', 'featuredProducts', 'heroProduct', 'heroShowcase'));
+        return view('home', compact('categories', 'heroProduct', 'heroShowcase', 'storefrontSettings', 'storefrontSlides'));
     }
 
     public function products(Request $request)

@@ -11,6 +11,6 @@ class ProductsPageTest extends TestCase
         $template = file_get_contents(base_path('resources/views/products.blade.php'));
 
         $this->assertStringContainsString('aspect-[4/3]', $template);
-        $this->assertStringContainsString('object-cover object-center', $template);
+        $this->assertStringContainsString('object-contain object-center', $template);
     }
 }

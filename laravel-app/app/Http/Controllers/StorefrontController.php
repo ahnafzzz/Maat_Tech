@@ -37,18 +37,56 @@ class StorefrontController extends Controller
     public function addToCart(Request $request, string $product): RedirectResponse
     {
         $product = Product::published()->findOrFail($product);
-        $this->cartService->add($request, $product, (int) $request->input('quantity', 1));
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'variant_key' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
+        ]);
+        $this->cartService->add($request, $product, $validated['quantity'], $validated['variant_key'] ?? null);
 
         return back()->with('status', $product->name.' added to cart.');
     }
 
+    public function buyNow(Request $request, string $product): RedirectResponse
+    {
+        $product = Product::published()->findOrFail($product);
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'variant_key' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
+        ]);
+        $variant = $product->purchasableVariant($validated['variant_key'] ?? null);
+        if (! $variant || ! $variant['available'] || $variant['stock'] < $validated['quantity']) {
+            throw ValidationException::withMessages(['variant_key' => 'The selected color and quantity are not available.']);
+        }
+
+        $activeSelections = collect($request->session()->get('buy_now', []))
+            ->filter(fn ($selection) => is_array($selection)
+                && isset($selection['created_at'])
+                && now()->timestamp - (int) $selection['created_at'] <= 1800)
+            ->all();
+        $request->session()->put('buy_now', $activeSelections);
+        $token = bin2hex(random_bytes(24));
+        $request->session()->put('buy_now.'.$token, [
+            'product_id' => (int) $product->id,
+            'variant_key' => $variant['key'],
+            'variant_label' => $variant['label'],
+            'quantity' => $validated['quantity'],
+            'created_at' => now()->timestamp,
+        ]);
+
+        return redirect()->route('checkout', ['buy_now' => $token]);
+    }
+
     public function updateCart(Request $request, string $product): RedirectResponse
     {
-        $quantity = (int) $request->input('quantity', 1);
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'variant_key' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
+        ]);
+        $quantity = $validated['quantity'];
         if ($quantity <= 0) {
-            $this->cartService->remove($request, (int) $product);
+            $this->cartService->remove($request, (int) $product, $validated['variant_key'] ?? null);
         } else {
-            $this->cartService->update($request, Product::published()->findOrFail($product), $quantity);
+            $this->cartService->update($request, Product::published()->findOrFail($product), $quantity, $validated['variant_key'] ?? null);
         }
 
         return back()->with('status', 'Cart updated.');
@@ -56,7 +94,10 @@ class StorefrontController extends Controller
 
     public function removeFromCart(Request $request, string $product): RedirectResponse
     {
-        $this->cartService->remove($request, (int) $product);
+        $validated = $request->validate([
+            'variant_key' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
+        ]);
+        $this->cartService->remove($request, (int) $product, $validated['variant_key'] ?? null);
 
         return back()->with('status', 'Item removed from cart.');
     }
@@ -70,14 +111,18 @@ class StorefrontController extends Controller
 
     public function checkout(Request $request): View|RedirectResponse
     {
-        $items = $this->cartService->items($request);
+        $buyNowToken = $request->string('buy_now')->toString();
+        $buyNowLines = $buyNowToken !== '' ? $this->buyNowLines($request, $buyNowToken) : null;
+        $items = $buyNowLines === null ? $this->cartService->items($request) : $this->cartService->itemsForLines($buyNowLines);
 
         if ($items->isEmpty()) {
             return back()->with('status', 'Your cart is empty.');
         }
 
         if ($items->contains(fn (array $item) => ! $item['available'])) {
-            return redirect()->route('cart.index')->withErrors(['cart' => 'Remove unavailable items before checkout.']);
+            return $buyNowLines === null
+                ? redirect()->route('cart.index')->withErrors(['cart' => 'Remove unavailable items before checkout.'])
+                : back()->withErrors(['cart' => 'The Buy Now selection is no longer available.']);
         }
 
         $selectedDistrict = $request->user('web')?->district;
@@ -98,6 +143,7 @@ class StorefrontController extends Controller
 
         return view('checkout', ['items' => $items, ...$quote, 'selectedDistrict' => $selectedDistrict,
             'checkoutAttemptKey' => $attemptKey,
+            'buyNowToken' => $buyNowToken !== '' ? $buyNowToken : null,
             'districts' => CheckoutService::DISTRICTS]);
     }
 
@@ -105,15 +151,19 @@ class StorefrontController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
-            'phone' => ['required', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'max:20', 'regex:/^(?:\+?880|0)1[3-9]\d{8}$/'],
             'district' => ['required', 'string', 'max:100'],
-            'address' => ['required', 'string', 'max:2000'],
+            'address' => ['required', 'string', 'min:10', 'max:2000'],
             'customer_note' => ['nullable', 'string', 'max:1000'],
             'checkout_attempt_key' => ['required', 'string', 'max:128', 'regex:'.CheckoutService::IDEMPOTENCY_KEY_PATTERN],
+            'buy_now_token' => ['nullable', 'string', 'size:48', 'regex:/^[a-f0-9]+$/'],
         ]);
 
         $validated['district'] = $this->checkoutService->normalizeDistrict($validated['district']);
         $customer = $request->user('web');
+        $directLines = ! empty($validated['buy_now_token'])
+            ? $this->buyNowLines($request, $validated['buy_now_token'], $validated['checkout_attempt_key'])
+            : null;
         $guestCart = $customer ? [] : $request->session()->get('cart', []);
         $guestIdentity = $customer ? null : $this->guestCheckoutIdentity($request);
         $result = $this->checkoutService->checkout(
@@ -121,7 +171,8 @@ class StorefrontController extends Controller
             $guestCart,
             $validated,
             $validated['checkout_attempt_key'],
-            $guestIdentity
+            $guestIdentity,
+            $directLines,
         );
         $order = $result->order;
 
@@ -129,11 +180,32 @@ class StorefrontController extends Controller
         $orderIds[] = $order->id;
 
         $request->session()->put('order_ids', array_values(array_unique($orderIds)));
-        if (! $customer && ! $result->replayed && $request->session()->get('cart', []) === $guestCart) {
+        if ($directLines === null && ! $customer && ! $result->replayed && $request->session()->get('cart', []) === $guestCart) {
             $request->session()->forget('cart');
+        }
+        if ($directLines !== null && ! $result->replayed) {
+            $request->session()->put(
+                'buy_now.'.$validated['buy_now_token'].'.completed_attempt_key',
+                $validated['checkout_attempt_key'],
+            );
         }
 
         return redirect()->route('orders.index')->with('status', 'Order placed successfully.');
+    }
+
+    private function buyNowLines(Request $request, string $token, ?string $attemptKey = null): array
+    {
+        $line = $request->session()->get('buy_now.'.$token);
+        if (! is_array($line) || ! isset($line['created_at']) || now()->timestamp - (int) $line['created_at'] > 1800) {
+            $request->session()->forget('buy_now.'.$token);
+            throw ValidationException::withMessages(['cart' => 'This Buy Now selection expired. Return to the product and choose Buy Now again.']);
+        }
+        $completedAttempt = $line['completed_attempt_key'] ?? null;
+        if (is_string($completedAttempt) && ($attemptKey === null || ! hash_equals($completedAttempt, $attemptKey))) {
+            throw ValidationException::withMessages(['cart' => 'This Buy Now selection has already been ordered. Start a new Buy Now purchase to order it again.']);
+        }
+
+        return [$token => $line];
     }
 
     private function guestCheckoutIdentity(Request $request): string
@@ -150,7 +222,7 @@ class StorefrontController extends Controller
     public function orders(Request $request): View
     {
         $customer = $request->user('web');
-        $orders = Order::with('items')
+        $orders = Order::with('items.product')
             ->when($customer, fn ($query) => $query->where('user_id', $customer->id), fn ($query) => $query->whereIn('id', $request->session()->get('order_ids', [])))
             ->latest('placed_at')
             ->get();

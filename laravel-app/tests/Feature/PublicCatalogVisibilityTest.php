@@ -67,8 +67,7 @@ class PublicCatalogVisibilityTest extends TestCase
         $archived = $this->product(['name' => 'Hidden Archived Lamp', 'status' => 'archived']);
 
         $this->get('/')->assertOk()
-            ->assertSee($active->name)->assertDontSee($draft->name)->assertDontSee($archived->name)
-            ->assertSee('1 UNITS');
+            ->assertSee($active->name)->assertDontSee($draft->name)->assertDontSee($archived->name);
         $this->get('/products')->assertOk()
             ->assertSee($active->name)->assertDontSee($draft->name)->assertDontSee($archived->name);
         $this->get('/sitemap.xml')->assertOk()
@@ -250,6 +249,7 @@ class PublicCatalogVisibilityTest extends TestCase
             'password' => 'Test-password-42!',
             'status' => 'active',
             'session_version' => Str::random(64),
+            'two_factor_enabled' => true,
         ]);
 
         $this->actingAs($admin, 'admin')

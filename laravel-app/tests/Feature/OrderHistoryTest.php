@@ -174,10 +174,12 @@ class OrderHistoryTest extends TestCase
             'password' => 'password',
             'status' => 'active',
             'session_version' => Str::random(64),
+            'two_factor_enabled' => true,
         ]);
 
         $this->getJson('/api/orders/'.$order->id)->assertUnauthorized();
         $this->actingAs($admin, 'admin')->getJson('/api/orders/'.$order->id)->assertUnauthorized();
+        $order->update(['status' => 'shipped', 'expires_at' => null]);
         $this->actingAs($customer, 'web')
             ->withSession([AdminSessionVersion::SESSION_KEY => $admin->session_version])
             ->deleteJson('/api/products/'.$product->id)->assertOk();

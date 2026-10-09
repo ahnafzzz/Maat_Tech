@@ -42,14 +42,14 @@ class CartCheckoutConsistencyTest extends TestCase
 
     private function checkoutPayload(): array
     {
-        return ['name' => 'Buyer', 'phone' => '01700000000', 'district' => 'Dhaka', 'address' => 'Test Road',
+        return ['name' => 'Buyer', 'phone' => '01700000000', 'district' => 'Dhaka', 'address' => 'Test Road 1',
             'checkout_attempt_key' => 'web-checkout-key-0001'];
     }
 
     private function apiPayload(array $shippingOverrides = []): array
     {
         return ['payment_method' => 'cod', 'shipping_method' => 'pathao', 'shipping_address' => array_merge([
-            'name' => 'Buyer', 'phone' => '01700000000', 'city' => 'Dhaka', 'address' => 'Test Road',
+            'name' => 'Buyer', 'phone' => '01700000000', 'city' => 'Dhaka', 'address' => 'Test Road 1',
         ], $shippingOverrides)];
     }
 
@@ -126,7 +126,7 @@ class CartCheckoutConsistencyTest extends TestCase
         $request->setLaravelSession($this->app['session']->driver());
         $request->session()->put('cart', [$product->id => 4]);
         $this->app->make(CartMergeService::class)->merge($request, $customer);
-        $this->assertSame(9, Cart::where('user_id', $customer->id)->firstOrFail()->items()->sum('quantity'));
+        $this->assertSame(11, Cart::where('user_id', $customer->id)->firstOrFail()->items()->sum('quantity'));
         $this->assertDatabaseCount('cart_items', 1);
         $this->assertFalse($request->session()->has('cart'));
     }

@@ -28,13 +28,22 @@ class ProductWriteRequest extends FormRequest
             'price' => [$required, 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
             'compare_at_price' => ['sometimes', 'nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
             'discount_amount' => ['sometimes', 'nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:99999999.99'],
+            'discount_percent' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],
             'stock' => [$required, 'integer', 'min:0', 'max:2147483647'],
             'status' => ['sometimes', Rule::in(['active', 'draft', 'archived'])],
             'is_featured' => ['sometimes', 'boolean'],
             'description' => ['sometimes', 'nullable', 'string', 'max:15000'],
+            'spec_keys' => ['sometimes', 'array', 'max:30'],
+            'spec_keys.*' => ['nullable', 'string', 'max:120'],
+            'spec_values' => ['sometimes', 'array', 'max:30'],
+            'spec_values.*' => ['nullable', 'string', 'max:500'],
+            'variants' => ['sometimes', 'array', 'max:20'],
+            'variants.*.label' => ['required_with:variants', 'string', 'max:120'],
+            'variants.*.stock' => ['required_with:variants', 'integer', 'min:0', 'max:2147483647'],
+            'variants.*.available' => ['sometimes', 'boolean'],
             'seo_title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'seo_description' => ['sometimes', 'nullable', 'string', 'max:500'],
-            'images' => ['sometimes', 'array', 'max:10'],
+            'images' => ['sometimes', 'array', 'max:7'],
             'images.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'video' => ['sometimes', 'nullable', 'file', 'mimes:mp4,webm,mov', 'mimetypes:video/mp4,video/webm,video/quicktime', 'max:102400'],
             'image' => ['prohibited'],
@@ -46,6 +55,10 @@ class ProductWriteRequest extends FormRequest
                 ? ['prohibited']
                 : ['sometimes', 'array', 'max:10'],
             'remove_images.*' => ['string', 'max:255', 'distinct'],
+            'image_order' => $creating
+                ? ['prohibited']
+                : ['sometimes', 'array', 'max:50'],
+            'image_order.*' => ['string', 'max:255', 'distinct'],
             'remove_video' => $creating
                 ? ['prohibited']
                 : ['sometimes', 'boolean'],

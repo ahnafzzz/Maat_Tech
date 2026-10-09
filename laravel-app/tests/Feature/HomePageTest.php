@@ -32,18 +32,20 @@ class HomePageTest extends TestCase
         $lamp = $this->product($category, [
             'name' => 'Fixture LED Swing-Arm Desk Lamp',
             'slug' => 'linked-lamp',
-            'price' => '2350.00',
+            'price' => '3332.00',
+            'discount_amount' => '833.00',
         ]);
 
         $response = $this->get('/')->assertOk()
             ->assertViewHas('heroProduct', fn (Product $product): bool => $product->is($lamp))
             ->assertSee('Fixture LED Swing-Arm Desk Lamp')
-            ->assertSee('BDT 2,350.00')
+            ->assertSee('25% off')
+            ->assertDontSee('BDT 2,499.00')
             ->assertSee(route('products.show', $lamp->slug), false)
             ->assertSee('data-showcase-model="fixture-lamp-model"', false)
             ->assertSee(asset('assets/models/fixture.json'), false)
             ->assertSee('Loading 3D preview')
-            ->assertSee($unrelated->name);
+            ->assertDontSee($unrelated->name);
 
         $this->assertStringNotContainsString(
             'data-showcase-model="fixture-lamp-model"',
@@ -69,7 +71,52 @@ class HomePageTest extends TestCase
             ->assertDontSee('data-showcase-manifest', false)
             ->assertSee('Product image');
 
-        $this->assertSame(1, substr_count($response->getContent(), 'id="featured"'));
+        $this->assertSame(0, substr_count($response->getContent(), 'id="featured"'));
+    }
+
+    public function test_homepage_omits_empty_and_single_redundant_category_navigation(): void
+    {
+        $useful = Category::create(['name' => 'Task Lamps', 'slug' => 'task-lamps']);
+        Category::create(['name' => 'Empty Category', 'slug' => 'empty-category']);
+        $this->product($useful, ['slug' => 'only-published-product']);
+
+        $this->get('/')->assertOk()
+            ->assertViewHas('categories', fn ($categories): bool => $categories->count() === 1 && $categories->first()->is($useful))
+            ->assertDontSee('>Categories<', false)
+            ->assertDontSee('Empty Category');
+    }
+
+    public function test_product_linked_slideshow_uses_all_optimized_supplied_assets(): void
+    {
+        $category = Category::create(['name' => 'Desk Lamps', 'slug' => 'desk-lamps']);
+        $product = $this->product($category, [
+            'name' => 'LED Swing-Arm Desk Lamp',
+            'slug' => 'series-x-articulated-lamp',
+        ]);
+        $slides = config('product-showcases.products.series-x-articulated-lamp.marketing_slides');
+
+        $this->assertCount(9, $slides);
+        $this->assertCount(6, array_filter($slides, fn (array $slide): bool => $slide['type'] === 'landscape'));
+        $this->assertCount(3, array_filter($slides, fn (array $slide): bool => $slide['type'] === 'portrait'));
+        foreach ($slides as $slide) {
+            $path = public_path($slide['image']);
+            $responsivePath = public_path(preg_replace('/\.webp$/', $slide['type'] === 'landscape' ? '-960.webp' : '-560.webp', $slide['image']));
+            $this->assertFileExists($path);
+            $this->assertFileExists($responsivePath);
+            $this->assertLessThan(200_000, filesize($path));
+            $this->assertLessThan(filesize($path), filesize($responsivePath));
+        }
+
+        $response = $this->get('/')->assertOk()
+            ->assertSee('data-storefront-slideshow', false)
+            ->assertSee('data-slideshow-interval="5000"', false)
+            ->assertSee('aspect-video', false)
+            ->assertSee(route('products.show', $product->slug), false)
+            ->assertDontSee('data-slideshow-pause', false)
+            ->assertDontSee('data-slideshow-play', false);
+
+        $this->assertSame(9, substr_count($response->getContent(), 'data-slideshow-slide'));
+        $this->assertSame(9, substr_count($response->getContent(), 'data-slideshow-dot'));
     }
 
     public function test_extracted_showcase_assets_preserve_verified_model_contract(): void

@@ -40,6 +40,7 @@ class ProductWriteLifecycleTest extends TestCase
             'password' => 'Admin-Password-42!',
             'status' => 'active',
             'session_version' => Str::random(64),
+            'two_factor_enabled' => true,
         ]);
         $this->actingAs($admin, 'admin')->withSession([
             AdminSessionVersion::SESSION_KEY => $sessionVersion ?? $admin->session_version,
@@ -269,6 +270,43 @@ class ProductWriteLifecycleTest extends TestCase
         Storage::disk('public')->assertExists($api->images[0]);
     }
 
+    public function test_photo_limit_uses_final_count_and_admin_can_reorder_replace_video_and_preserve_legacy_overage(): void
+    {
+        $this->authenticateAdmin();
+        $paths = collect(range(1, 8))->map(fn (int $number) => "products/legacy/images/$number.jpg")->all();
+        foreach ($paths as $path) {
+            Storage::disk('public')->put($path, $path);
+        }
+        $oldVideo = 'products/legacy/video/old.mp4';
+        Storage::disk('public')->put($oldVideo, 'old-video');
+        $product = $this->product(['images' => array_slice($paths, 0, 6), 'image' => $paths[0], 'video_path' => $oldVideo]);
+
+        $this->patch(route('admin.products.update', $product), [
+            'images' => [$this->image('seventh.png'), $this->image('eighth.png')],
+        ])->assertSessionHasErrors('images');
+        $this->assertSame(array_slice($paths, 0, 6), $product->fresh()->images);
+        Storage::disk('public')->assertExists($oldVideo);
+
+        $this->patch(route('admin.products.update', $product), [
+            'remove_images' => [$paths[0]],
+            'image_order' => [$paths[2], $paths[1], $paths[3], $paths[4], $paths[5]],
+            'images' => [$this->image('sixth-replacement.png'), $this->image('seventh.png')],
+            'video' => UploadedFile::fake()->create('replacement.mp4', 10, 'video/mp4'),
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $product->refresh();
+        $this->assertCount(7, $product->images);
+        $this->assertSame([$paths[2], $paths[1], $paths[3], $paths[4], $paths[5]], array_slice($product->images, 0, 5));
+        $this->assertSame($paths[2], $product->image);
+        Storage::disk('public')->assertMissing([$paths[0], $oldVideo]);
+        Storage::disk('public')->assertExists($product->video_path);
+
+        $legacy = $this->product(['images' => $paths, 'image' => $paths[0]]);
+        $this->patch(route('admin.products.update', $legacy), ['name' => 'Legacy Eight Photo Product'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertCount(8, $legacy->fresh()->images);
+    }
+
     public function test_database_failure_after_upload_removes_new_file_and_preserves_existing_media(): void
     {
         $this->authenticateAdmin();
@@ -348,6 +386,7 @@ class ProductWriteLifecycleTest extends TestCase
         $headers = ['Idempotency-Key' => 'product-delete-replay-0001'];
         $orderId = $this->actingAs($customer, 'web')->postJson('/api/orders', $payload, $headers)
             ->assertCreated()->json('id');
+        \App\Models\Order::whereKey($orderId)->update(['status' => 'shipped', 'expires_at' => null]);
 
         $this->deleteJson('/api/products/'.$product->id)
             ->assertOk()->assertJsonPath('media_cleanup_pending', false);

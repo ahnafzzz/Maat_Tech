@@ -77,4 +77,30 @@
     .brand-logo {
         filter: drop-shadow(0 0 5px rgb(45 212 191 / .16));
     }
+
+    [data-slideshow-slide][data-active='true'] {
+        pointer-events: auto;
+        visibility: visible;
+        z-index: 10;
+        opacity: 1;
+    }
+
+    [data-slideshow-slide][data-active='false'] {
+        pointer-events: none;
+        visibility: hidden;
+        z-index: 0;
+        opacity: 0;
+    }
+
+    .media-thumbnail {
+        min-width: 4.25rem;
+        min-height: 3.75rem;
+        overflow: hidden;
+        border-width: 1px;
+        outline: none;
+    }
+
+    .media-thumbnail[aria-selected='true'] {
+        box-shadow: inset 0 0 0 1px #2dd4bf;
+    }
 }

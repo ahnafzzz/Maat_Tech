@@ -60,7 +60,8 @@ class CartMergeService
 
                     $cart = Cart::where('user_id', $user->id)->lockForUpdate()->first();
                     $cartItems = $cart
-                        ? CartItem::where('cart_id', $cart->id)->orderBy('product_id')->lockForUpdate()->get()->keyBy('product_id')
+                        ? CartItem::where('cart_id', $cart->id)->orderBy('product_id')->lockForUpdate()->get()
+                            ->keyBy(fn (CartItem $item) => $this->lineKey((int) $item->product_id, (string) $item->variant_key))
                         : collect();
 
                     $wishlist = Wishlist::where('user_id', $user->id)->orderBy('id')->lockForUpdate()->first();
@@ -69,30 +70,40 @@ class CartMergeService
                         ->orderBy('product_id')->lockForUpdate()->get()->keyBy('product_id');
 
                     $productIds = array_values(array_unique([
-                        ...array_keys($snapshot['cart']),
+                        ...collect($snapshot['cart'])->map(fn ($entry, $key) => $this->capturedLine($key, $entry)['product_id'])->all(),
                         ...$snapshot['wishlist'],
                     ]));
                     sort($productIds, SORT_NUMERIC);
                     $products = Product::published()->whereIn('id', $productIds)
                         ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
 
-                    foreach ($snapshot['cart'] as $productId => $quantity) {
+                    foreach ($snapshot['cart'] as $lineKey => $entry) {
+                        $line = $this->capturedLine($lineKey, $entry);
+                        $productId = $line['product_id'];
+                        $quantity = $line['quantity'];
                         $product = $products->get($productId);
                         if (! $product) {
                             continue;
                         }
 
+                        $variant = $product->purchasableVariant($line['variant_key']);
+                        if (! $variant || ! $variant['available']) {
+                            continue;
+                        }
+
                         $cart ??= Cart::create(['user_id' => $user->id, 'session_id' => null]);
-                        $item = $cartItems->get($productId);
-                        $mergedQuantity = min($product->stock, ($item?->quantity ?? 0) + $quantity);
+                        $identity = $this->lineKey($productId, $variant['key']);
+                        $item = $cartItems->get($identity);
+                        $mergedQuantity = min(self::MAX_QUANTITY, ($item?->quantity ?? 0) + $quantity);
                         if ($mergedQuantity <= 0) {
                             continue;
                         }
 
-                        $item ??= new CartItem(['cart_id' => $cart->id, 'product_id' => $productId]);
+                        $item ??= new CartItem(['cart_id' => $cart->id, 'product_id' => $productId, 'variant_key' => $variant['key']]);
                         $item->quantity = $mergedQuantity;
+                        $item->variant_label = $variant['label'];
                         $item->save();
-                        $cartItems->put($productId, $item);
+                        $cartItems->put($identity, $item);
                     }
 
                     foreach ($snapshot['wishlist'] as $productId) {
@@ -172,6 +183,7 @@ class CartMergeService
         return str_contains($message, 'carts_user_id_unique')
             || str_contains($message, 'carts.user_id')
             || str_contains($message, 'cart_items_cart_id_product_id_unique')
+            || str_contains($message, 'cart_items_cart_product_variant_unique')
             || (str_contains($message, 'cart_items.cart_id') && str_contains($message, 'cart_items.product_id'));
     }
 
@@ -179,15 +191,20 @@ class CartMergeService
     {
         $currentCart = $request->session()->get('cart', []);
         if (is_array($currentCart)) {
-            foreach ($snapshot['cart'] as $productId => $capturedQuantity) {
-                if (! array_key_exists($productId, $currentCart) || ! is_int($currentCart[$productId])) {
+            foreach ($snapshot['cart'] as $lineKey => $captured) {
+                if (! array_key_exists($lineKey, $currentCart)) {
                     continue;
                 }
-
-                if ($currentCart[$productId] > $capturedQuantity) {
-                    $currentCart[$productId] -= $capturedQuantity;
-                } elseif ($currentCart[$productId] === $capturedQuantity) {
-                    unset($currentCart[$productId]);
+                $capturedLine = $this->capturedLine($lineKey, $captured);
+                $currentLine = $this->capturedLine($lineKey, $currentCart[$lineKey]);
+                if ($currentLine['quantity'] > $capturedLine['quantity']) {
+                    if (is_int($currentCart[$lineKey])) {
+                        $currentCart[$lineKey] -= $capturedLine['quantity'];
+                    } else {
+                        $currentCart[$lineKey]['quantity'] -= $capturedLine['quantity'];
+                    }
+                } elseif ($currentLine['quantity'] === $capturedLine['quantity']) {
+                    unset($currentCart[$lineKey]);
                 }
             }
             $currentCart === [] ? $request->session()->forget('cart') : $request->session()->put('cart', $currentCart);
@@ -218,13 +235,28 @@ class CartMergeService
         }
 
         $validated = [];
-        foreach ($cart as $productId => $quantity) {
-            if (! ctype_digit((string) $productId) || ! is_int($quantity) || $quantity <= 0 || $quantity > self::MAX_QUANTITY) {
+        foreach ($cart as $lineKey => $entry) {
+            if (ctype_digit((string) $lineKey) && is_int($entry)) {
+                if ($entry <= 0 || $entry > self::MAX_QUANTITY) {
+                    throw ValidationException::withMessages(['cart' => 'Guest cart quantities must be positive whole numbers within the supported range.']);
+                }
+                $validated[(int) $lineKey] = $entry;
+                continue;
+            }
+            if (! is_array($entry) || ! isset($entry['product_id'], $entry['quantity'])
+                || ! is_int($entry['quantity']) || $entry['quantity'] <= 0 || $entry['quantity'] > self::MAX_QUANTITY
+                || ! ctype_digit((string) $entry['product_id'])
+                || preg_match('/^[a-z0-9][a-z0-9-]{0,79}$/D', (string) ($entry['variant_key'] ?? '')) !== 1) {
                 throw ValidationException::withMessages(['cart' => 'Guest cart quantities must be positive whole numbers within the supported range.']);
             }
-            $validated[(int) $productId] = $quantity;
+            $validated[(string) $lineKey] = [
+                'product_id' => (int) $entry['product_id'],
+                'variant_key' => (string) $entry['variant_key'],
+                'variant_label' => isset($entry['variant_label']) ? (string) $entry['variant_label'] : null,
+                'quantity' => $entry['quantity'],
+            ];
         }
-        ksort($validated, SORT_NUMERIC);
+        ksort($validated);
 
         return $validated;
     }
@@ -268,5 +300,24 @@ class CartMergeService
         if (! hash_equals($fingerprint, $snapshot['fingerprint'])) {
             throw new \InvalidArgumentException('The captured guest merge snapshot fingerprint does not match.');
         }
+    }
+
+    private function capturedLine(int|string $key, mixed $entry): array
+    {
+        if (ctype_digit((string) $key) && is_int($entry)) {
+            return ['product_id' => (int) $key, 'variant_key' => '', 'variant_label' => null, 'quantity' => $entry];
+        }
+
+        return [
+            'product_id' => (int) $entry['product_id'],
+            'variant_key' => (string) ($entry['variant_key'] ?? ''),
+            'variant_label' => $entry['variant_label'] ?? null,
+            'quantity' => (int) $entry['quantity'],
+        ];
+    }
+
+    private function lineKey(int $productId, string $variantKey): string
+    {
+        return $productId.'|'.$variantKey;
     }
 }

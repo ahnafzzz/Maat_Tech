@@ -37,8 +37,8 @@ class OrderController extends Controller
             'shipping_method' => ['required', 'in:pathao'],
             'shipping_address' => 'required|array',
             'shipping_address.name' => ['sometimes', 'required', 'string', 'max:120'],
-            'shipping_address.phone' => ['sometimes', 'required', 'string', 'max:30'],
-            'shipping_address.address' => ['required', 'string', 'max:2000'],
+            'shipping_address.phone' => ['sometimes', 'required', 'string', 'max:20', 'regex:/^(?:\+?880|0)1[3-9]\d{8}$/'],
+            'shipping_address.address' => ['required', 'string', 'min:10', 'max:2000'],
             'shipping_address.district' => ['nullable', 'string', 'max:100'],
             'shipping_address.city' => ['nullable', 'string', 'max:100'],
             'customer_note' => ['nullable', 'string', 'max:1000'],
@@ -62,8 +62,8 @@ class OrderController extends Controller
             'address' => trim($data['shipping_address']['address']),
         ]], [
             'shipping_address.name' => ['required', 'string', 'max:120'],
-            'shipping_address.phone' => ['required', 'string', 'max:30'],
-            'shipping_address.address' => ['required', 'string', 'max:2000'],
+            'shipping_address.phone' => ['required', 'string', 'max:20', 'regex:/^(?:\+?880|0)1[3-9]\d{8}$/'],
+            'shipping_address.address' => ['required', 'string', 'min:10', 'max:2000'],
         ])->validate()['shipping_address'];
 
         $result = $this->checkoutService->checkout($customer, [], [

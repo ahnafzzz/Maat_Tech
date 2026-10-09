@@ -69,8 +69,8 @@ class CheckoutTest extends TestCase
         $order = Order::firstOrFail();
         $this->assertNull($order->user_id);
         $this->assertSame('180.70', $order->subtotal);
-        $this->assertSame('80.00', $order->shipping_fee);
-        $this->assertSame('260.70', $order->total);
+        $this->assertSame('0.00', $order->shipping_fee);
+        $this->assertSame('180.70', $order->total);
         $this->assertSame('Dhaka', $order->district);
         $this->assertSame('Dhaka', $order->shipping_address['city']);
         $this->assertDatabaseHas('order_items', ['order_id' => $order->id, 'product_id' => $product->id,
@@ -94,7 +94,8 @@ class CheckoutTest extends TestCase
         $order = Order::firstOrFail();
         $this->assertSame($customer->id, $order->user_id);
         $this->assertSame('270.00', $order->subtotal);
-        $this->assertSame('140.00', $order->shipping_fee);
+        $this->assertSame('0.00', $order->shipping_fee);
+        $this->assertSame('270.00', $order->total);
         $this->assertDatabaseMissing('cart_items', ['cart_id' => $ownCart->id]);
         $this->assertDatabaseHas('cart_items', ['cart_id' => $otherCart->id, 'quantity' => 4]);
         $this->assertDatabaseHas('products', ['id' => $product->id, 'stock' => 7]);
@@ -115,8 +116,8 @@ class CheckoutTest extends TestCase
         $response->assertCreated()->assertJsonPath('user_id', $customer->id);
         $order = Order::firstOrFail();
         $this->assertSame('100.40', $order->subtotal);
-        $this->assertSame('140.00', $order->shipping_fee);
-        $this->assertSame('240.40', $order->total);
+        $this->assertSame('0.00', $order->shipping_fee);
+        $this->assertSame('100.40', $order->total);
         $this->assertSame('cod', $order->payment_method);
         $this->assertSame('pathao', $order->shipping_method);
         $this->assertSame('50.20', $order->items->first()->unit_price);
@@ -126,12 +127,12 @@ class CheckoutTest extends TestCase
     {
         $product = $this->product(['price' => '100.55', 'discount_amount' => '10.20']);
         $this->withSession(['cart' => [$product->id => 2]])->get('/checkout')
-            ->assertOk()->assertViewHas('subtotal', '180.70')->assertViewHas('shippingFee', null)
-            ->assertSee('Select district');
+            ->assertOk()->assertViewHas('subtotal', '180.70')->assertViewHas('shippingFee', '0.00')
+            ->assertViewHas('total', '180.70')->assertSee('Free delivery all across Bangladesh.');
         $customer = $this->user(['district' => ' dhaka ']);
         $this->cartItem($customer, $product, 2);
         $this->actingAs($customer)->get('/checkout')->assertOk()
-            ->assertViewHas('subtotal', '180.70')->assertViewHas('shippingFee', '80.00')->assertViewHas('total', '260.70');
+            ->assertViewHas('subtotal', '180.70')->assertViewHas('shippingFee', '0.00')->assertViewHas('total', '180.70');
     }
 
     public function test_empty_and_invalid_guest_carts_are_rejected_and_preserved(): void

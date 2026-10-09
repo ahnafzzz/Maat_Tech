@@ -3,10 +3,10 @@
 @section('meta_description', $product->seo_description ?: \Illuminate\Support\Str::limit($product->description, 150))
 
 @php
-    $gallery = collect($product->images ?? [])->filter()->values();
-    if ($gallery->isEmpty() && $product->image) {
-        $gallery = collect([$product->image]);
-    }
+    $gallery = collect($product->galleryImageUrls());
+    $videoUrl = $product->videoUrl();
+    $purchaseVariants = collect($product->purchasableVariants());
+    $defaultVariant = $purchaseVariants->first(fn ($variant) => $variant['available'] && $variant['stock'] > 0);
 @endphp
 
 @section('content')
@@ -17,17 +17,36 @@
         <div class="min-w-0">
             @if ($productShowcase)
                 <x-product-showroom :product="$product" :showcase="$productShowcase" />
-            @elseif ($gallery->isNotEmpty())
-                <div class="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
-                    <img id="product-main-image" src="{{ asset('storage/' . $gallery->first()) }}" alt="{{ $product->name }}" class="aspect-[4/3] w-full rounded-sm border border-cyber-border bg-[#0c1119] object-cover object-center">
-                    @if ($gallery->count() > 1)
-                        <div class="grid grid-cols-2 content-start gap-2">
-                            @foreach ($gallery as $image)
-                                <button type="button" class="product-thumb min-h-11 overflow-hidden rounded-sm border border-cyber-border bg-[#0c1119] outline-none focus-visible:ring-2 focus-visible:ring-tech-300" data-image="{{ asset('storage/' . $image) }}" aria-label="View product photograph {{ $loop->iteration }}"><img src="{{ asset('storage/' . $image) }}" alt="" class="aspect-square w-full object-cover" loading="lazy"></button>
-                            @endforeach
-                        </div>
-                    @endif
-                </div>
+            @elseif ($gallery->isNotEmpty() || $videoUrl)
+                @php($initialMedia = $gallery->isNotEmpty() ? 'photo-0' : 'video')
+                <section data-product-media-gallery data-active-media="{{ $initialMedia }}" aria-label="{{ $product->name }} media gallery">
+                    <div class="relative aspect-[4/3] overflow-hidden rounded-sm border border-cyber-border bg-[#f2efe9]">
+                        @foreach ($gallery as $image)
+                            <div @if(!$loop->first) hidden @endif data-media-panel="photo-{{ $loop->index }}" class="absolute inset-0 grid place-items-center p-3 sm:p-6">
+                                <img data-media-image @if($loop->first) src="{{ $image }}" @else data-src="{{ $image }}" @endif alt="{{ $product->name }} photograph {{ $loop->iteration }}" class="h-full w-full object-contain object-center">
+                                <div hidden data-media-fallback class="absolute inset-0 grid place-items-center bg-[#0c1119] text-center text-sm text-slate-400">This photograph could not be loaded.</div>
+                            </div>
+                        @endforeach
+                        @if ($videoUrl)
+                            <div @if($initialMedia !== 'video') hidden @endif data-media-panel="video" class="absolute inset-0 grid place-items-center bg-black p-2 sm:p-4">
+                                <video data-media-video data-src="{{ $videoUrl }}" controls preload="none" playsinline class="h-full w-full object-contain" aria-label="{{ $product->name }} product video"></video>
+                                <div hidden data-media-fallback class="absolute inset-0 grid place-items-center bg-[#0c1119] text-center text-sm text-slate-400">This video could not be loaded.</div>
+                            </div>
+                        @endif
+                    </div>
+                    <div class="mt-3 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Product media">
+                        @foreach ($gallery as $image)
+                            <button type="button" role="tab" aria-selected="{{ $loop->first ? 'true' : 'false' }}" data-media-select="photo-{{ $loop->index }}" class="media-thumbnail shrink-0 {{ $loop->first ? 'border-tech-400 bg-tech-950/50' : 'border-cyber-border bg-[#0c1119]' }}">
+                                <img src="{{ $image }}" alt="" class="h-14 w-16 object-cover" loading="lazy"><span class="sr-only">Product photograph {{ $loop->iteration }}</span>
+                            </button>
+                        @endforeach
+                        @if ($videoUrl)
+                            <button type="button" role="tab" aria-selected="{{ $initialMedia === 'video' ? 'true' : 'false' }}" data-media-select="video" class="media-thumbnail relative shrink-0 {{ $initialMedia === 'video' ? 'border-tech-400 bg-tech-950/50' : 'border-cyber-border bg-[#0c1119]' }} text-white">
+                                <span class="grid h-14 w-16 place-items-center"><i data-lucide="play" class="h-6 w-6"></i></span><span class="sr-only">Product video</span>
+                            </button>
+                        @endif
+                    </div>
+                </section>
             @else
                 <div class="grid aspect-[4/3] place-items-center rounded-sm border border-cyber-border bg-[#0c1119] text-tech-400"><i data-lucide="image-off" class="h-28 w-28" stroke-width="1"></i></div>
             @endif
@@ -37,61 +56,69 @@
             <p class="font-mono text-[10px] uppercase tracking-[.18em] text-tech-400">{{ $product->category->name ?? 'Catalog' }} · {{ $product->sku ?: 'UNIT-' . str_pad($product->id, 4, '0', STR_PAD_LEFT) }}</p>
             <h1 class="mt-3 text-3xl font-bold leading-tight text-white">{{ $product->name }}</h1>
             <p class="mt-4 leading-7 text-slate-400">{{ $product->description }}</p>
+            <a href="#product-details" class="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-tech-300 outline-none hover:text-tech-200 focus-visible:ring-2 focus-visible:ring-tech-300">View published product details<i data-lucide="arrow-down" class="h-4 w-4"></i></a>
             <div class="mt-6 border-t border-cyber-border pt-5">
                 @if ($product->has_discount)
-                    <p class="font-mono text-sm text-slate-500 line-through">BDT {{ number_format($product->price, 2) }}</p>
-                    <p class="mt-1 font-mono text-3xl font-bold text-tech-300">BDT {{ number_format($product->final_price, 2) }}</p>
-                    <p class="mt-2 text-xs text-slate-500">Current product discount: BDT {{ number_format($product->discount_amount, 2) }}</p>
+                    <p class="font-mono text-base text-slate-500 line-through">৳{{ number_format($product->price, 0) }}</p>
+                    <div class="mt-1 flex flex-wrap items-center gap-3"><p class="font-mono text-3xl font-bold text-tech-300">৳{{ number_format($product->final_price, 0) }}</p><span class="border border-amber-500/60 bg-amber-950/40 px-2 py-1 text-xs font-bold text-amber-300">{{ $product->discountPercent() }}% OFF</span></div>
+                    <p class="mt-2 text-sm text-slate-400">You save ৳{{ number_format($product->discount_amount, 0) }}</p>
                 @else
                     <p class="font-mono text-3xl font-bold text-tech-300">BDT {{ number_format($product->final_price, 2) }}</p>
                 @endif
-                <p class="mt-3 text-sm text-slate-300">Availability: <span class="font-semibold {{ $product->stock > 0 ? 'text-tech-300' : 'text-rose-300' }}">{{ $product->stock > 0 ? 'In stock (' . $product->stock . ' available)' : 'Out of stock' }}</span></p>
+                <p class="mt-4 font-semibold text-emerald-300">Free delivery all across Bangladesh.</p>
             </div>
             <form id="product-purchase-form" method="POST" action="{{ route('cart.add', $product) }}" class="mt-6" data-submit-once>
                 @csrf
+                @if ($purchaseVariants->isNotEmpty())
+                    <fieldset>
+                        <legend class="text-sm font-semibold text-slate-200">Color: <span data-selected-color>{{ $defaultVariant['label'] ?? 'Unavailable' }}</span></legend>
+                        <div class="mt-2 grid grid-cols-2 gap-2">
+                            @foreach ($purchaseVariants as $variant)
+                                @php($available = $variant['available'] && $variant['stock'] > 0)
+                                <label @class(['flex min-h-12 items-center gap-3 border px-3 py-2 text-sm', 'cursor-pointer border-cyber-border text-slate-200 hover:border-tech-500' => $available, 'cursor-not-allowed border-slate-800 text-slate-600' => !$available])>
+                                    <input type="radio" name="variant_key" value="{{ $variant['key'] }}" data-purchase-variant data-variant-label="{{ $variant['label'] }}" data-variant-stock="{{ $variant['stock'] }}" data-variant-finish="{{ in_array($variant['key'], ['black', 'white'], true) ? $variant['key'] : '' }}" @checked(($defaultVariant['key'] ?? null) === $variant['key']) @disabled(!$available) class="accent-teal-500">
+                                    <span>{{ $variant['label'] }}</span><span class="ml-auto text-xs">{{ $available ? $variant['stock'].' available' : 'Unavailable' }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                    </fieldset>
+                @endif
                 <label class="block text-sm font-semibold text-slate-200">Quantity
-                    <input type="number" name="quantity" min="1" max="{{ max(1, $product->stock) }}" value="1" {{ $product->stock < 1 ? 'disabled' : '' }} class="mt-2 min-h-11 w-full rounded-sm border border-cyber-border bg-[#090d14] px-3 py-3 text-white outline-none focus-visible:border-tech-400 focus-visible:ring-2 focus-visible:ring-tech-300">
+                    <input data-purchase-quantity type="number" name="quantity" min="1" max="{{ max(1, $defaultVariant['stock'] ?? $product->stock) }}" value="1" {{ $product->stock < 1 || ($purchaseVariants->isNotEmpty() && !$defaultVariant) ? 'disabled' : '' }} class="mt-2 min-h-11 w-full rounded-sm border border-cyber-border bg-[#090d14] px-3 py-3 text-white outline-none focus-visible:border-tech-400 focus-visible:ring-2 focus-visible:ring-tech-300">
                 </label>
-                <button {{ $product->stock < 1 ? 'disabled' : '' }} class="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-sm border border-tech-400 bg-tech-600 px-4 py-3 text-sm font-semibold text-white outline-none hover:bg-tech-500 focus-visible:ring-2 focus-visible:ring-tech-300 disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="shopping-cart" class="h-4 w-4"></i>Add to Cart</button>
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button {{ $product->stock < 1 ? 'disabled' : '' }} formaction="{{ route('cart.add', $product) }}" class="flex min-h-12 w-full items-center justify-center gap-2 rounded-sm border border-tech-400 bg-tech-600 px-4 py-3 text-sm font-semibold text-white outline-none hover:bg-tech-500 focus-visible:ring-2 focus-visible:ring-tech-300 disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="shopping-cart" class="h-4 w-4"></i>Add to Cart</button>
+                    <button {{ $product->stock < 1 ? 'disabled' : '' }} formaction="{{ route('buy-now', $product) }}" class="flex min-h-12 w-full items-center justify-center gap-2 rounded-sm border border-white bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-tech-300 disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="zap" class="h-4 w-4"></i>Buy Now</button>
+                </div>
             </form>
             <form method="POST" action="{{ route('wishlist.toggle', $product) }}" class="mt-3">@csrf<button class="flex min-h-11 w-full items-center justify-center gap-2 rounded-sm border border-cyber-border px-4 py-3 text-sm font-semibold text-slate-300 outline-none hover:border-tech-600 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="heart" class="h-4 w-4"></i>Save to Wishlist</button></form>
-            <a href="https://wa.me/8801601934752?text={{ urlencode('I want to order ' . $product->name) }}" target="_blank" rel="noreferrer" class="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-sm border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm font-semibold text-emerald-300 outline-none hover:bg-emerald-900/50 focus-visible:ring-2 focus-visible:ring-emerald-400"><i data-lucide="message-circle" class="h-4 w-4"></i>Ask on WhatsApp</a>
+            @if($storefrontSettings->whatsappUrl())<a href="{{ $storefrontSettings->whatsappUrl('I want to order '.$product->name) }}" target="_blank" rel="noreferrer" class="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-sm border border-emerald-700 bg-emerald-950/40 px-4 py-3 text-sm font-semibold text-emerald-300 outline-none hover:bg-emerald-900/50 focus-visible:ring-2 focus-visible:ring-emerald-400"><i data-lucide="message-circle" class="h-4 w-4"></i>{{ $storefrontSettings->whatsapp_cta_label }}</a>@endif
         </aside>
     </div>
 
-    @if ($productShowcase && $gallery->isNotEmpty())
-        <section class="mt-10" aria-labelledby="product-photos-heading">
-            <div class="mb-4 flex items-end justify-between gap-3">
-                <div><p class="font-mono text-[10px] uppercase tracking-[.18em] text-tech-400">Real product media</p><h2 id="product-photos-heading" class="mt-1 text-xl font-bold text-white">Product photographs</h2></div>
-                <p class="text-xs text-slate-500">Photographs remain separate from the visual 3D preview.</p>
-            </div>
-            <div class="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
-                <img id="product-main-image" src="{{ asset('storage/' . $gallery->first()) }}" alt="{{ $product->name }}" class="aspect-[16/10] w-full rounded-sm border border-cyber-border bg-[#0c1119] object-cover object-center">
-                <div class="grid grid-cols-2 content-start gap-2">
-                    @foreach ($gallery as $image)
-                        <button type="button" class="product-thumb min-h-11 overflow-hidden rounded-sm border border-cyber-border bg-[#0c1119] outline-none focus-visible:ring-2 focus-visible:ring-tech-300" data-image="{{ asset('storage/' . $image) }}" aria-label="View product photograph {{ $loop->iteration }}"><img src="{{ asset('storage/' . $image) }}" alt="" class="aspect-square w-full object-cover" loading="lazy"></button>
-                    @endforeach
-                </div>
-            </div>
-        </section>
-    @endif
-
-    @if ($product->video_path)
-        <section class="mt-8"><h2 class="mb-3 text-xl font-bold text-white">Product video</h2><video controls class="w-full rounded-sm border border-cyber-border" src="{{ asset('storage/' . $product->video_path) }}"></video></section>
-    @endif
-
-    <div class="mt-10 grid gap-6 lg:grid-cols-2">
-        <section class="rounded-sm border border-cyber-border bg-[#0d121b] p-5" aria-labelledby="specification-heading">
+    <div id="product-details" class="mt-10 grid scroll-mt-24 gap-6 lg:grid-cols-2">
+        <section class="min-w-0 rounded-sm border border-cyber-border bg-[#0d121b] p-5" aria-labelledby="specification-heading">
             <h2 id="specification-heading" class="text-xl font-bold text-white">Product specifications</h2>
-            <dl class="mt-4 grid gap-3 sm:grid-cols-2">
-                @forelse ($product->specs ?? [] as $key => $value)
-                    <div class="border-t border-cyber-border pt-3"><dt class="font-mono text-[10px] uppercase text-slate-500">{{ $key }}</dt><dd class="mt-1 text-sm text-slate-200">{{ $value }}</dd></div>
-                @empty
-                    <div class="text-sm text-slate-500">No additional product specifications have been published.</div>
-                @endforelse
-            </dl>
+            <p class="mt-3 text-sm leading-6 text-slate-300">{{ $product->description }}</p>
+            @if (!empty($product->specs))
+                <div class="mt-4 max-w-full overflow-hidden border border-cyber-border">
+                    <table class="w-full table-fixed border-collapse text-left text-sm">
+                        <caption class="sr-only">Published specifications for {{ $product->name }}</caption>
+                        <tbody>
+                            @foreach ($product->specs as $label => $value)
+                                <tr class="border-b border-cyber-border last:border-b-0">
+                                    <th scope="row" class="w-2/5 break-words bg-slate-950/45 px-3 py-3 font-mono text-[10px] uppercase tracking-[.08em] text-slate-400 sm:px-4">{{ $label }}</th>
+                                    <td class="break-words px-3 py-3 text-slate-200 sm:px-4">{{ $value }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <p class="mt-4 text-sm text-slate-500">No additional product specifications have been published.</p>
+            @endif
         </section>
-        <section class="rounded-sm border border-cyber-border bg-[#0d121b] p-5" aria-labelledby="reviews-heading">
+        <section class="min-w-0 rounded-sm border border-cyber-border bg-[#0d121b] p-5" aria-labelledby="reviews-heading">
             <h2 id="reviews-heading" class="text-xl font-bold text-white">Customer Reviews</h2>
             <div class="mt-4 space-y-3">
                 @forelse ($product->reviews as $review)
@@ -110,7 +137,7 @@
                 @foreach ($relatedProducts as $related)
                     <article class="glass-panel overflow-hidden transition hover:-translate-y-1 hover:border-tech-600">
                         <a href="{{ route('products.show', $related->slug) }}" class="block aspect-[4/3] overflow-hidden bg-[#0d121b] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tech-300">
-                            @if(!empty($related->images))<img src="{{ asset('storage/' . $related->images[0]) }}" alt="{{ $related->name }}" class="h-full w-full object-cover">@elseif($related->image)<img src="{{ asset('storage/' . $related->image) }}" alt="{{ $related->name }}" class="h-full w-full object-cover">@else<span class="grid h-full place-items-center text-tech-400"><i data-lucide="image-off" class="h-16 w-16"></i></span>@endif
+                            <img src="{{ $related->primaryImageUrl() }}" alt="{{ $related->name }}" class="h-full w-full object-contain" loading="lazy">
                         </a>
                         <div class="p-5"><a href="{{ route('products.show', $related->slug) }}" class="font-semibold text-white outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300">{{ $related->name }}</a><p class="mt-3 font-mono text-sm text-tech-300">BDT {{ number_format($related->final_price, 2) }}</p></div>
                     </article>
@@ -140,6 +167,9 @@
     .product-showroom[data-showroom-state="ready"] [data-showroom-canvas] { opacity: 1; }
     .product-showroom[data-showroom-state="ready"] [data-showroom-poster] { opacity: 0; }
     .product-showroom[data-showroom-state="fallback"] [data-showroom-canvas] { display: none; }
+    .product-showroom[data-showroom-state="context-lost"] [data-showroom-canvas] { opacity: 0; }
+    .product-showroom[data-showroom-state="fallback"] .showroom-retry,
+    .product-showroom[data-showroom-state="context-lost"] .showroom-retry { display: inline-flex; }
     .showroom-button { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; border: 1px solid rgb(45 212 191 / .7); background: rgb(9 13 19 / .82); color: #ccfbf1; backdrop-filter: blur(8px); outline: none; }
     .showroom-button:hover { background: rgb(13 148 136 / .8); }
     .showroom-button:focus-visible, .showroom-choice:focus-visible { box-shadow: 0 0 0 2px #5eead4; }
@@ -150,15 +180,4 @@
     .showroom-part-label:focus-visible { box-shadow: 0 0 0 2px #5eead4; }
     details[open] > summary svg { transform: rotate(180deg); }
 </style>
-@endpush
-
-@push('scripts')
-<script>
-    document.querySelectorAll('.product-thumb').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var main = document.getElementById('product-main-image');
-            if (main) main.src = button.dataset.image;
-        });
-    });
-</script>
 @endpush

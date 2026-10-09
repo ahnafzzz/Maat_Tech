@@ -142,10 +142,15 @@ class AdminTwoFactorService
 
     public function toggle(Admin $candidate): Admin
     {
-        return DB::transaction(function () use ($candidate): Admin {
+        return $this->setEnabled($candidate, ! $candidate->two_factor_enabled);
+    }
+
+    public function setEnabled(Admin $candidate, bool $enabled): Admin
+    {
+        return DB::transaction(function () use ($candidate, $enabled): Admin {
             $admin = Admin::whereKey($candidate->id)->lockForUpdate()->firstOrFail();
             $admin->forceFill([
-                'two_factor_enabled' => ! $admin->two_factor_enabled,
+                'two_factor_enabled' => $enabled,
                 'two_factor_code' => null,
                 'two_factor_expires_at' => null,
             ])->save();

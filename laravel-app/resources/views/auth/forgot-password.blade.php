@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Forgot Password | MAAT Technologies BD</title>
+    <title>Forgot Password | {{ $storefrontSettings->site_name }}</title>
     @vite('resources/css/app.css')
 </head>
 <body class="min-h-screen bg-[#090b10] font-sans text-white">
@@ -12,7 +12,7 @@
     <main class="mx-auto flex min-h-screen max-w-md items-center px-5">
         <form method="POST" action="{{ route('password.email') }}" class="w-full border border-cyber-border bg-cyber-panel/90 p-7 shadow-2xl shadow-black/40 sm:p-9">
             @csrf
-            <h1 class="font-mono text-lg">MAAT Technologies BD</h1>
+            <h1 class="font-mono text-lg">{{ $storefrontSettings->site_name }}</h1>
             <p class="mt-2 text-sm text-slate-400">Enter your email to receive a secure password reset link.</p>
 
             @if (session('status'))

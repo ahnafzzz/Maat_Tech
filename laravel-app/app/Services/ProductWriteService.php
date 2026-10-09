@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Requests\ProductWriteRequest;
+use App\Models\OrderItem;
 use App\Models\Product;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -15,7 +16,8 @@ class ProductWriteService
 {
     private const CATALOG_FIELDS = [
         'name', 'category_id', 'slug', 'sku', 'price', 'compare_at_price', 'discount_amount',
-        'stock', 'status', 'is_featured', 'description', 'seo_title', 'seo_description',
+        'discount_percent', 'stock', 'status', 'is_featured', 'description', 'seo_title', 'seo_description',
+        'spec_keys', 'spec_values', 'variants',
     ];
 
     public function __construct(private readonly ProductMediaStorage $mediaStorage) {}
@@ -30,7 +32,7 @@ class ProductWriteService
                 $attributes = $this->normalizedAttributes(null, Arr::only($validated, self::CATALOG_FIELDS));
                 $product = Product::create([
                     ...$attributes,
-                    'specs' => [],
+                    'specs' => $attributes['specs'] ?? [],
                     'images' => [],
                 ]);
 
@@ -68,8 +70,14 @@ class ProductWriteService
 
                 $existingImages = collect($locked->images ?? [])->filter(fn ($path) => is_string($path) && $path !== '')->values();
                 $removedImages = collect($request->input('remove_images', []));
-                $images = $existingImages->diff($removedImages)->concat($newImages)->values()->all();
-                $imagesChanged = $removedImages->isNotEmpty() || $newImages !== [];
+                $retainedImages = $existingImages->diff($removedImages)->values();
+                $requestedOrder = collect($request->input('image_order', []));
+                if ($requestedOrder->isNotEmpty()) {
+                    $retainedImages = $requestedOrder->filter(fn ($path) => $retainedImages->contains($path))
+                        ->concat($retainedImages->diff($requestedOrder))->values();
+                }
+                $images = $retainedImages->concat($newImages)->values()->all();
+                $imagesChanged = $removedImages->isNotEmpty() || $newImages !== [] || $requestedOrder->isNotEmpty();
                 $oldPrimaryImage = $locked->image;
                 $primaryImage = $imagesChanged ? ($images[0] ?? null) : $oldPrimaryImage;
                 $oldVideo = $locked->video_path;
@@ -109,6 +117,13 @@ class ProductWriteService
     {
         $paths = DB::transaction(function () use ($product): array {
             $locked = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
+            if (OrderItem::where('product_id', $locked->id)
+                ->whereHas('order', fn ($query) => $query->whereIn('status', ['pending', 'processing']))
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'product' => 'This product has reserved stock in an active order. Archive it now and delete it only after those orders are shipped or cancelled.',
+                ]);
+            }
             $paths = $this->productMediaPaths($locked);
             $locked->delete();
 
@@ -120,7 +135,8 @@ class ProductWriteService
 
     private function normalizedAttributes(?Product $product, array $input): array
     {
-        $base = $product ? Arr::only($product->getAttributes(), self::CATALOG_FIELDS) : [
+        $variantsProvided = array_key_exists('variants', $input);
+        $base = $product ? Arr::only($product->toArray(), [...self::CATALOG_FIELDS, 'specs', 'variants']) : [
             'slug' => $this->generatedSlug((string) $input['name']),
             'sku' => 'ML-'.Str::upper(Str::random(12)),
             'compare_at_price' => null,
@@ -130,8 +146,44 @@ class ProductWriteService
             'description' => null,
             'seo_title' => null,
             'seo_description' => null,
+            'specs' => [],
+            'variants' => [],
         ];
         $attributes = array_replace($base, $input);
+        if (array_key_exists('discount_percent', $attributes)) {
+            $percent = (int) ($attributes['discount_percent'] ?? 0);
+            $priceForDiscount = $this->moneyToMinor($attributes['price']);
+            $attributes['discount_amount'] = $this->minorToMoney((int) round(($priceForDiscount * $percent) / 100));
+        }
+        unset($attributes['discount_percent']);
+
+        if (array_key_exists('spec_keys', $attributes) || array_key_exists('spec_values', $attributes)) {
+            $keys = array_values((array) ($attributes['spec_keys'] ?? []));
+            $values = array_values((array) ($attributes['spec_values'] ?? []));
+            $attributes['specs'] = [];
+            foreach ($keys as $index => $key) {
+                $key = trim((string) $key);
+                $value = trim((string) ($values[$index] ?? ''));
+                if ($key !== '' && $value !== '') {
+                    $attributes['specs'][$key] = $value;
+                }
+            }
+        }
+        unset($attributes['spec_keys'], $attributes['spec_values']);
+
+        if ($variantsProvided) {
+            $attributes['variants'] = collect((array) $attributes['variants'])->map(function ($variant, $key): array {
+                $stock = max(0, (int) ($variant['stock'] ?? 0));
+
+                return [
+                    'key' => strtolower((string) $key),
+                    'label' => trim((string) ($variant['label'] ?? $key)),
+                    'available' => (bool) ($variant['available'] ?? false) && $stock > 0,
+                    'stock' => $stock,
+                ];
+            })->values()->all();
+            $attributes['stock'] = collect($attributes['variants'])->where('available', true)->sum('stock');
+        }
         $attributes['discount_amount'] = $attributes['discount_amount'] ?? 0;
 
         $price = $this->moneyToMinor($attributes['price']);
@@ -158,8 +210,13 @@ class ProductWriteService
         if ($removals->diff($existing)->isNotEmpty()) {
             throw ValidationException::withMessages(['remove_images' => 'Only media currently associated with this product may be removed.']);
         }
-        if ($existing->diff($removals)->count() + count($request->file('images', [])) > 10) {
-            throw ValidationException::withMessages(['images' => 'A product can have a maximum of 10 photos. Remove existing photos before uploading more.']);
+        $finalCount = $existing->diff($removals)->count() + count($request->file('images', []));
+        if ($finalCount > 7 && count($request->file('images', [])) > 0) {
+            throw ValidationException::withMessages(['images' => 'A product can have a maximum of 7 photos. Remove enough existing photos before uploading more.']);
+        }
+        $requestedOrder = collect($request->input('image_order', []));
+        if ($requestedOrder->diff($existing)->isNotEmpty()) {
+            throw ValidationException::withMessages(['image_order' => 'Only current product photos may be reordered.']);
         }
     }
 

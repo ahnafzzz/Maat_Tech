@@ -24,7 +24,7 @@ class ProductShowcaseRegistry
     }
 
     /**
-     * @return array{model_id: string, manifest: string, poster: string}|null
+     * @return array{model_id: string, manifest: string, poster: string, marketing_slides?: list<array<string, string>>}|null
      */
     public function forProduct(Product $product): ?array
     {
@@ -34,11 +34,17 @@ class ProductShowcaseRegistry
             return null;
         }
 
-        return [
+        $showcase = [
             'model_id' => $association['model_id'],
             'manifest' => $association['manifest'],
             'poster' => $association['poster'],
         ];
+
+        if (is_array($association['marketing_slides'] ?? null)) {
+            $showcase['marketing_slides'] = array_values($association['marketing_slides']);
+        }
+
+        return $showcase;
     }
 
     private function valid(mixed $association): bool

@@ -16,12 +16,25 @@ class ProductSeeder extends Seeder
         $products = [
             [
                 'category_id' => $categoryMap['articulated-arms'],
-                'name' => 'Series-X Articulated Lamp',
+                'name' => 'LED Swing-Arm Desk Lamp',
                 'slug' => 'series-x-articulated-lamp',
-                'description' => 'Premium articulated lighting for precision workspaces.',
-                'price' => 27390,
+                'description' => 'Bring focused light exactly where your work moves. The articulated arm and adjustable head position easily for reading, study, detailed making, and everyday desk work, while the edge clamp keeps your workspace open.',
+                'price' => 3332,
+                'discount_amount' => 833,
                 'stock' => 24,
-                'specs' => ['axes' => 4, 'voltage' => '24V', 'material' => 'CNC Aluminum'],
+                'specs' => [
+                    'Light source' => 'LED',
+                    'Mounting' => 'Desk-edge clamp',
+                    'Adjustment' => 'Articulated swing arm and adjustable lamp head',
+                    'Light modes' => 'Warm, neutral, and white',
+                    'Brightness' => 'Adjustable',
+                    'Power connection' => 'USB',
+                    'Controls' => 'In-line light controller',
+                ],
+                'variants' => [
+                    ['key' => 'black', 'label' => 'Black', 'available' => true, 'stock' => 24],
+                    ['key' => 'white', 'label' => 'White', 'available' => false, 'stock' => 0],
+                ],
                 'is_featured' => true,
             ],
             [

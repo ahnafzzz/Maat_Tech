@@ -34,12 +34,28 @@ class DeploymentPreflight extends Command
             $errors[] = 'APP_KEY is missing or invalid.';
         }
 
-        if (! str_starts_with((string) config('app.url'), 'https://')) {
-            $errors[] = 'APP_URL must use HTTPS.';
+        if (rtrim((string) config('app.url'), '/') !== 'https://'.config('site.canonical_host')) {
+            $errors[] = 'APP_URL must exactly match the configured HTTPS canonical host.';
         }
 
         if (config('session.secure') !== true) {
             $errors[] = 'SESSION_SECURE_COOKIE must be true.';
+        }
+
+        if (config('session.encrypt') !== true) {
+            $errors[] = 'SESSION_ENCRYPT must be true.';
+        }
+
+        if (! in_array((string) config('mail.default'), ['smtp', 'ses', 'postmark', 'resend', 'mailgun'], true)) {
+            $errors[] = 'A real transactional mail transport is required for administrator verification and recovery.';
+        }
+
+        if (in_array((string) config('cache.default'), ['array', 'null'], true)) {
+            $errors[] = 'Production requires a persistent shared cache store for throttles and locks.';
+        }
+
+        if ((string) config('queue.default') === 'sync') {
+            $errors[] = 'Production queue processing must use a persistent asynchronous connection.';
         }
 
         foreach ((array) config('trustedproxy.proxies', []) as $proxy) {
@@ -84,6 +100,8 @@ class DeploymentPreflight extends Command
 
             if (! Schema::hasTable('migrations')) {
                 $errors[] = 'The database is not initialized; use the documented first-install procedure.';
+            } elseif (! Schema::hasTable('admins') || ! Schema::hasColumn('orders', 'stock_released_at')) {
+                $errors[] = 'Required security and inventory migrations have not been applied.';
             }
         } catch (Throwable) {
             $errors[] = 'The configured database is not reachable.';

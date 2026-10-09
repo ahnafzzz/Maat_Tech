@@ -22,6 +22,8 @@ class CartController extends Controller
             'id' => $item->id,
             'product_id' => $item->product_id,
             'quantity' => $item->quantity,
+            'variant_key' => $item->variant_key ?: null,
+            'variant_label' => $item->variant_label,
             'available' => $item->product !== null,
             'product' => $item->product,
         ]);
@@ -39,11 +41,12 @@ class CartController extends Controller
         $data = $request->validate([
             'product_id' => 'required|integer',
             'quantity' => 'required|integer|min:1',
+            'variant_key' => ['nullable', 'string', 'max:80', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
         ]);
 
         $customer = $request->user('web');
         $product = Product::published()->findOrFail($data['product_id']);
-        $this->cartService->addForCustomer($customer, $product, $data['quantity']);
+        $this->cartService->addForCustomer($customer, $product, $data['quantity'], $data['variant_key'] ?? null);
 
         return $this->index($request);
     }

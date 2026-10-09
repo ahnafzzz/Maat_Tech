@@ -19,8 +19,11 @@ export class ProductShowroom {
         this.renderer = null;
         this.visible = true;
         this.documentVisible = !document.hidden;
+        this.mediaActive = element.dataset.activeMedia !== undefined ? element.dataset.activeMedia === '3d' : true;
         this.interacted = false;
         this.destroyed = false;
+        this.rotationStorageKey = `maat:showroom:auto-rotation:${window.location.pathname}`;
+        this.rotationPreference = this.readRotationPreference();
         this.observer = 'IntersectionObserver' in window
             ? new IntersectionObserver(([entry]) => {
                 this.visible = entry.isIntersecting && entry.intersectionRatio > 0;
@@ -41,18 +44,27 @@ export class ProductShowroom {
                 {
                     onFirstFrame: () => {
                         this.element.dataset.showroomState = 'ready';
-                        this.setStatus(this.motion.matches ? 'Stationary interactive 3D view' : 'Interactive 3D view');
                         this.controls.forEach((control) => { control.disabled = false; });
+                        const enabled = this.rotationPreference === null ? !this.motion.matches : this.rotationPreference;
+                        this.setRotation(enabled, { explicit: this.rotationPreference === true, persist: false });
                     },
                     onError: () => this.fail(),
+                    onContextLost: () => {
+                        this.element.dataset.showroomState = 'context-lost';
+                        this.setStatus('3D graphics interrupted · waiting for browser recovery');
+                        this.updateActivity();
+                    },
+                    onContextRestored: () => {
+                        this.element.dataset.showroomState = 'ready';
+                        this.setStatus('Interactive 3D view restored');
+                        this.updateActivity();
+                    },
                     onLabels: (labels) => this.renderLabels(labels),
                 },
                 this.controller.signal,
                 { mode: 'showroom', autoRotate: !this.motion.matches },
             );
             this.renderer.setReducedMotion(this.motion.matches);
-            const autoRotate = this.element.querySelector('[data-showroom-input="autoRotate"]');
-            if (autoRotate && this.motion.matches) autoRotate.checked = false;
             this.updateActivity();
         } catch (error) {
             if (error?.name !== 'AbortError') this.fail();
@@ -135,11 +147,16 @@ export class ProductShowroom {
         };
         this.onClick = (event) => {
             const control = event.target.closest('[data-showroom-action]');
-            if (!control || !this.renderer) return;
+            if (!control) return;
+            if (control.dataset.showroomAction === 'retry') {
+                window.location.reload();
+                return;
+            }
+            if (!this.renderer) return;
             this.interact();
             const { showroomAction: action, showroomValue: value } = control.dataset;
             if (action === 'finish') this.renderer.setFinish(value);
-            if (action === 'light') this.renderer.setLight(value, this.brightnessLevel());
+            if (action === 'light') this.renderer.setLight(value, this.powerModeLevel());
             if (action === 'zoom') this.renderer.zoomBy(Number(value));
             if (action === 'camera') this.renderer.setCameraView(value);
             if (action === 'fit') {
@@ -153,7 +170,7 @@ export class ProductShowroom {
             if (action === 'focus') this.renderer.fitSelection();
             if (action === 'preset') {
                 this.renderer.applyPreset(value);
-                this.syncPoseControls();
+                this.syncAllControls();
             }
             if (action === 'resetPose') {
                 this.renderer.resetPose();
@@ -178,31 +195,27 @@ export class ProductShowroom {
             if (!control) return;
             this.interact();
             const name = control.dataset.showroomInput;
-            if (name === 'brightness') {
-                this.renderer.setLight(this.selectedValue('light', 'cool'), Number(control.value));
-                const simulation = this.element.querySelector('[data-showroom-input="simulationBrightness"]');
-                if (simulation) simulation.value = String(Number(control.value) * 2);
-            } else if (name === 'explode') {
+            if (name === 'explode') {
                 this.renderer.setExplode(control.value);
             } else if (name === 'anatomy') {
                 this.renderer.setAnatomy(control.checked);
             } else if (name === 'wires') {
                 this.renderer.setWires(control.checked);
+                this.syncInspectionControls();
             } else if (name === 'autoRotate') {
-                if (this.motion.matches && control.checked) control.checked = false;
-                this.renderer.setAutoRotation(control.checked && !this.motion.matches);
+                this.setRotation(control.checked, { explicit: true });
             } else if (name === 'selection') {
                 this.renderer.setSelection(control.value);
-                this.updatePartDescription(control.value);
+                this.syncInspectionControls();
             } else if (name === 'isolate') {
                 this.renderer.setIsolate(control.checked);
-            } else if (name === 'simulationBrightness') {
-                this.renderer.setSimulationBrightness(control.value);
+            } else if (name === 'powerMode') {
+                this.renderer.setPowerMode(control.value);
             } else {
                 this.renderer.setArticulation(name, control.value);
             }
             const output = this.element.querySelector(`[data-showroom-output="${name}"]`);
-            if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'brightness' ? ' / 5' : name === 'simulationBrightness' ? ' / 10' : '°'}`;
+            if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'powerMode' ? ' / 10' : '°'}`;
             this.updateActivity();
         };
         this.onVisibility = () => {
@@ -212,10 +225,35 @@ export class ProductShowroom {
         };
         this.onMotion = () => {
             this.renderer?.setReducedMotion(this.motion.matches);
-            if (this.motion.matches) this.renderer?.stopAutoRotation();
+            if (this.motion.matches) {
+                this.setRotation(false, { persist: false });
+            } else if (this.rotationPreference !== false) {
+                this.setRotation(true, { persist: false });
+            }
             this.updateActivity();
         };
-        this.onPageHide = () => this.destroy();
+        this.onMediaActive = (event) => {
+            this.mediaActive = event.detail?.media === '3d';
+            this.updateActivity();
+        };
+        this.onFinishRequest = (event) => {
+            if (this.renderer && ['black', 'white'].includes(event.detail?.finish)) {
+                this.interact();
+                this.renderer.setFinish(event.detail.finish);
+                const button = this.element.querySelector(`[data-showroom-action="finish"][data-showroom-value="${event.detail.finish}"]`);
+                if (button) this.selectButton(button);
+            }
+        };
+        this.onPageHide = (event) => {
+            if (!event.persisted) return this.destroy();
+            this.documentVisible = false;
+            this.updateActivity();
+        };
+        this.onPageShow = (event) => {
+            if (!event.persisted) return;
+            this.documentVisible = !document.hidden;
+            this.updateActivity();
+        };
         this.onPosterError = () => {
             const fallback = this.poster.dataset.fallbackSrc;
             if (fallback && this.poster.src !== fallback) this.poster.src = fallback;
@@ -229,19 +267,44 @@ export class ProductShowroom {
         this.canvas.addEventListener('keydown', this.onKeyDown);
         this.element.addEventListener('click', this.onClick);
         this.element.addEventListener('input', this.onInput);
+        this.element.addEventListener('product-media-active', this.onMediaActive);
+        this.element.addEventListener('showroom-finish-request', this.onFinishRequest);
         this.poster.addEventListener('error', this.onPosterError, { once: true });
         document.addEventListener('visibilitychange', this.onVisibility);
         this.motion.addEventListener?.('change', this.onMotion);
-        window.addEventListener('pagehide', this.onPageHide, { once: true });
+        window.addEventListener('pagehide', this.onPageHide);
+        window.addEventListener('pageshow', this.onPageShow);
     }
 
     interact() {
-        if (this.interacted) return;
         this.interacted = true;
         this.element.dataset.showroomInteracted = 'true';
-        this.renderer?.stopAutoRotation();
+        this.setRotation(false, { explicit: true });
+    }
+
+    readRotationPreference() {
+        try {
+            const stored = sessionStorage.getItem(this.rotationStorageKey);
+            return stored === 'on' ? true : stored === 'off' ? false : null;
+        } catch {
+            return null;
+        }
+    }
+
+    setRotation(enabled, { explicit = false, persist = explicit } = {}) {
+        const active = Boolean(enabled);
+        if (persist) {
+            this.rotationPreference = active;
+            try { sessionStorage.setItem(this.rotationStorageKey, active ? 'on' : 'off'); } catch { /* unavailable */ }
+        }
+        this.renderer?.setAutoRotation(active, { overrideReducedMotion: explicit && this.motion.matches });
+        const control = this.element.querySelector('[data-showroom-input="autoRotate"]');
+        if (control) {
+            control.checked = active;
+            control.setAttribute('aria-label', active ? 'Stop automatic rotation' : 'Start automatic rotation');
+        }
+        this.setStatus(active ? 'Interactive 3D view · automatic rotation on' : 'Interactive 3D view · automatic rotation off');
         this.updateActivity();
-        this.setStatus('Interactive 3D view · rotation paused');
     }
 
     reset() {
@@ -255,7 +318,7 @@ export class ProductShowroom {
                 control.value = control.dataset.defaultValue;
                 const name = control.dataset.showroomInput;
                 const output = this.element.querySelector(`[data-showroom-output="${name}"]`);
-                if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'brightness' ? ' / 5' : name === 'simulationBrightness' ? ' / 10' : '°'}`;
+                if (output) output.textContent = `${control.value}${name === 'jaw' ? ' mm' : name === 'explode' ? '%' : name === 'powerMode' ? ' / 10' : '°'}`;
             }
         });
         this.syncAllControls();
@@ -293,10 +356,10 @@ export class ProductShowroom {
             const control = this.element.querySelector(`[data-showroom-input="${name}"]`);
             if (control) control.checked = Boolean(state[name]);
         }
-        const simulation = this.element.querySelector('[data-showroom-input="simulationBrightness"]');
-        const simulationOutput = this.element.querySelector('[data-showroom-output="simulationBrightness"]');
-        if (simulation) simulation.value = state.brightness;
-        if (simulationOutput) simulationOutput.textContent = `${state.brightness} / 10`;
+        const powerMode = this.element.querySelector('[data-showroom-input="powerMode"]');
+        const powerModeOutput = this.element.querySelector('[data-showroom-output="powerMode"]');
+        if (powerMode) powerMode.value = state.brightness;
+        if (powerModeOutput) powerModeOutput.textContent = `${state.brightness} / 10`;
     }
 
     updatePartDescription(category) {
@@ -316,8 +379,8 @@ export class ProductShowroom {
         return this.element.querySelector(`[data-showroom-action="${action}"][aria-pressed="true"]`)?.dataset.showroomValue ?? fallback;
     }
 
-    brightnessLevel() {
-        return Number(this.element.querySelector('[data-showroom-input="brightness"]')?.value ?? 5);
+    powerModeLevel() {
+        return Number(this.element.querySelector('[data-showroom-input="powerMode"]')?.value ?? 10);
     }
 
     renderLabels(labels) {
@@ -336,10 +399,12 @@ export class ProductShowroom {
     }
 
     updateActivity() {
-        const active = this.visible && this.documentVisible;
+        const active = this.visible && this.documentVisible && this.mediaActive;
         this.renderer?.setDocumentVisible(this.documentVisible);
         this.renderer?.setActive(active);
-        this.element.dataset.showroomAnimation = active && !this.motion.matches && Boolean(this.renderer?.snapshot().autoRotate) ? 'running' : 'paused';
+        const snapshot = this.renderer?.snapshot();
+        this.element.dataset.showroomAnimation = active && Boolean(snapshot?.autoRotate)
+            && (!this.motion.matches || Boolean(snapshot?.motionOverride)) ? 'running' : 'paused';
     }
 
     fail() {
@@ -368,13 +433,21 @@ export class ProductShowroom {
         this.canvas.removeEventListener('keydown', this.onKeyDown);
         this.element.removeEventListener('click', this.onClick);
         this.element.removeEventListener('input', this.onInput);
+        this.element.removeEventListener('product-media-active', this.onMediaActive);
+        this.element.removeEventListener('showroom-finish-request', this.onFinishRequest);
         document.removeEventListener('visibilitychange', this.onVisibility);
         this.motion.removeEventListener?.('change', this.onMotion);
+        window.removeEventListener('pagehide', this.onPageHide);
+        window.removeEventListener('pageshow', this.onPageShow);
         this.pointers.clear();
+        delete this.element.dataset.showroomInitialized;
     }
 }
 
 export function initializeProductShowrooms(root = document) {
-    return [...root.querySelectorAll('[data-product-showroom][data-showroom-manifest]')]
-        .map((element) => new ProductShowroom(element).start());
+    return [...root.querySelectorAll('[data-product-showroom][data-showroom-manifest]:not([data-showroom-initialized])')]
+        .map((element) => {
+            element.dataset.showroomInitialized = 'true';
+            return new ProductShowroom(element).start();
+        });
 }

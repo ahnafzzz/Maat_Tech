@@ -33,7 +33,7 @@ class ApiAccessTest extends TestCase
 
     private function admin(bool $active): Admin
     {
-        return Admin::create(['admin_id' => 'ADM-1234-A', 'name' => 'Admin', 'email' => 'admin@example.test', 'password' => 'test-password', 'status' => $active ? 'active' : 'inactive', 'session_version' => Str::random(64)]);
+        return Admin::create(['admin_id' => 'ADM-1234-A', 'name' => 'Admin', 'email' => 'admin@example.test', 'password' => 'test-password', 'status' => $active ? 'active' : 'inactive', 'session_version' => Str::random(64), 'two_factor_enabled' => true]);
     }
 
     private function authenticateAs(string $actor): void
@@ -45,6 +45,23 @@ class ApiAccessTest extends TestCase
             $admin = $this->admin(in_array($actor, ['active', 'both-active']));
             $this->actingAs($admin, 'admin')->withSession([AdminSessionVersion::SESSION_KEY => $admin->session_version]);
         }
+    }
+
+    private function signInAdminWithTwoFactor(Admin $admin, string $password): void
+    {
+        Notification::fake();
+        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $password])
+            ->assertRedirect(route('admin.two-factor.challenge'));
+
+        $code = null;
+        Notification::assertSentTo($admin, AdminTwoFactorCodeNotification::class, function ($notification) use ($admin, &$code): bool {
+            $code = $notification->toMail($admin)->introLines[1] ?? null;
+
+            return is_string($code);
+        });
+
+        $this->post('/admin/two-factor', ['code' => $code])
+            ->assertRedirect(route('admin.dashboard'));
     }
 
     public static function deniedMutations(): array
@@ -114,8 +131,7 @@ class ApiAccessTest extends TestCase
         $newPassword = 'New-Api-Admin-84!';
         $admin->update(['password' => $oldPassword]);
 
-        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $oldPassword])
-            ->assertRedirect(route('admin.dashboard'));
+        $this->signInAdminWithTwoFactor($admin, $oldPassword);
         $this->assertSame($admin->session_version, session(AdminSessionVersion::SESSION_KEY));
 
         $this->rotatePassword($admin, $newPassword);
@@ -146,8 +162,7 @@ class ApiAccessTest extends TestCase
         $newPassword = 'New-Api-Admin-84!';
         $admin->update(['password' => $oldPassword]);
 
-        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $oldPassword])
-            ->assertRedirect(route('admin.dashboard'));
+        $this->signInAdminWithTwoFactor($admin, $oldPassword);
         $this->rotatePassword($admin, $newPassword);
         Auth::forgetGuards();
 
@@ -160,8 +175,7 @@ class ApiAccessTest extends TestCase
             $this->app['env'] = 'testing';
         }
 
-        $this->post('/admin/login', ['admin_id' => $admin->admin_id, 'password' => $newPassword])
-            ->assertRedirect(route('admin.dashboard'));
+        $this->signInAdminWithTwoFactor($admin->fresh(), $newPassword);
 
         $payload = ['category_id' => $product->category_id, 'name' => 'Fresh mutation', 'slug' => 'fresh-mutation', 'price' => 250, 'stock' => 20];
         $this->postJson('/api/products', $payload)->assertCreated();

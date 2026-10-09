@@ -6,7 +6,7 @@
     <header class="mb-10 flex flex-wrap items-end justify-between gap-4">
         <div>
             <p class="font-mono text-xs tracking-[.22em] text-tech-400">STORE_FRONT / CATALOG</p>
-            <h1 class="mt-2 text-3xl font-bold text-white">Precision Units</h1>
+            <h1 class="mt-2 text-3xl font-bold text-white">All products</h1>
         </div>
         <a href="{{ route('home') }}" class="inline-flex min-h-11 items-center gap-2 font-mono text-xs text-tech-400 outline-none hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="arrow-left" class="h-4 w-4"></i>Return home</a>
     </header>
@@ -55,13 +55,7 @@
             @foreach($products as $product)
                 <article class="glass-panel group overflow-hidden transition hover:-translate-y-1 hover:border-tech-600">
                     <a href="{{ route('products.show', $product->slug) }}" class="relative block aspect-[4/3] overflow-hidden bg-[#0d121b]">
-                        @if(!empty($product->images))
-                            <img src="{{ asset('storage/' . $product->images[0]) }}" alt="{{ $product->name }}" class="block h-full w-full object-cover object-center transition duration-300 group-hover:scale-105" loading="lazy">
-                        @elseif($product->image)
-                            <img src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}" class="block h-full w-full object-cover object-center transition duration-300 group-hover:scale-105" loading="lazy">
-                        @else
-                            <div class="grid h-full place-items-center text-tech-400"><i data-lucide="image-off" class="h-16 w-16" stroke-width="1"></i></div>
-                        @endif
+                        <img src="{{ $product->primaryImageUrl() }}" alt="{{ $product->name }}" class="block h-full w-full object-contain object-center transition duration-300 group-hover:scale-105" loading="lazy">
                         <span class="absolute left-3 top-3 rounded-md border border-tech-800 bg-tech-950/90 px-2 py-1 font-mono text-[10px] text-tech-300">{{ $product->category->name ?? 'CATALOG' }}</span>
                         @if($product->has_discount)
                             <span class="absolute right-3 top-3 rounded-md border border-rose-800 bg-rose-950/90 px-2 py-1 font-mono text-[10px] text-rose-200">SALE</span>
@@ -81,10 +75,15 @@
                                 @endif
                                 <strong class="font-mono text-lg text-white">BDT {{ number_format($product->final_price) }}</strong>
                             </div>
-                            <form method="POST" action="{{ route('cart.add', $product) }}">
-                                @csrf
-                                <button aria-label="Add {{ $product->name }} to cart" class="grid h-11 w-11 place-items-center rounded-lg border border-tech-600 text-tech-300 outline-none transition hover:bg-tech-600 hover:text-white focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="plus" class="h-4 w-4"></i></button>
-                            </form>
+                            @if (count($product->purchasableVariants()) > 0)
+                                <a href="{{ route('products.show', $product->slug) }}" aria-label="Choose a color for {{ $product->name }}" class="grid h-11 w-11 place-items-center rounded-lg border border-tech-600 text-tech-300 outline-none transition hover:bg-tech-600 hover:text-white focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="arrow-right" class="h-4 w-4"></i></a>
+                            @else
+                                <form method="POST" action="{{ route('cart.add', $product) }}" data-submit-once>
+                                    @csrf
+                                    <input type="hidden" name="quantity" value="1">
+                                    <button aria-label="Add {{ $product->name }} to cart" class="grid h-11 w-11 place-items-center rounded-lg border border-tech-600 text-tech-300 outline-none transition hover:bg-tech-600 hover:text-white focus-visible:ring-2 focus-visible:ring-tech-300"><i data-lucide="plus" class="h-4 w-4"></i></button>
+                                </form>
+                            @endif
                         </div>
                     </div>
                 </article>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Reset Password | MAAT Technologies BD</title>
+    <title>Reset Password | {{ $storefrontSettings->site_name }}</title>
     @vite('resources/css/app.css')
 </head>
 <body class="min-h-screen bg-[#090b10] font-sans text-white">
@@ -14,7 +14,7 @@
             @csrf
             <input type="hidden" name="token" value="{{ $token }}">
 
-            <h1 class="font-mono text-lg">MAAT Technologies BD</h1>
+            <h1 class="font-mono text-lg">{{ $storefrontSettings->site_name }}</h1>
             <p class="mt-2 text-sm text-slate-400">Set a new secure password for your customer account.</p>
 
             @if ($errors->any())

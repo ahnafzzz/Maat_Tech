@@ -43,10 +43,12 @@ export const DESK_LAMP_GROUPS = Object.freeze({
     usb: { label: 'USB connector', color: [0.64, 0.53, 0.40], description: 'Overmould, hollow metal shell, insulator and contacts.' },
 });
 
+const EXTERNAL_ASSEMBLY_GROUPS = new Set(['controller', 'cable', 'usb']);
+
 const clamp = (value, [minimum, maximum]) => Math.max(minimum, Math.min(maximum, value));
 const modelCache = new Map();
 
-export const brightnessForLevel = (level) => [2, 4, 6, 8, 10][clamp(Math.round(level), [1, 5]) - 1];
+export const powerModeLevel = (level) => clamp(Math.round(Number(level)), [1, 10]);
 
 function multiplyMatrices(a, b) {
     const result = Array(16).fill(0);
@@ -146,9 +148,12 @@ function createProgram(gl) {
         uniform float glow;
         void main() {
             vec3 normalized = normalize(normal);
-            float key = abs(dot(normalized, normalize(vec3(-0.4, -0.7, 1.0))));
-            float fill = abs(dot(normalized, normalize(vec3(0.7, 0.4, 0.3))));
-            vec3 shaded = color * (0.48 + 0.6 * key + 0.2 * fill) + vec3(pow(key, 30.0) * 0.025);
+            if (!gl_FrontFacing) normalized = -normalized;
+            float key = max(dot(normalized, normalize(vec3(-0.45, -0.65, 1.0))), 0.0);
+            float fill = max(dot(normalized, normalize(vec3(0.75, 0.35, 0.45))), 0.0);
+            float back = max(dot(normalized, normalize(vec3(-0.15, 0.85, 0.25))), 0.0);
+            float highlight = pow(max(dot(normalized, normalize(vec3(-0.3, -0.45, 1.0))), 0.0), 18.0);
+            vec3 shaded = color * (0.58 + 0.55 * key + 0.22 * fill + 0.12 * back) + vec3(highlight * 0.055);
             shaded = mix(shaded, color, glow);
             gl_FragColor = vec4(pow(max(shaded, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         }
@@ -210,8 +215,8 @@ async function fetchModelBinary(manifest, manifestResponse, manifestUrl) {
     return binaryResponse.arrayBuffer();
 }
 
-export function shouldAnimate({ active, documentVisible, reducedMotion, autoRotate = true }) {
-    return active && documentVisible && !reducedMotion && autoRotate;
+export function shouldAnimate({ active, documentVisible, reducedMotion, motionOverride = false, autoRotate = true }) {
+    return active && documentVisible && autoRotate && (!reducedMotion || motionOverride);
 }
 
 export class DeskLampShowcaseRenderer {
@@ -223,6 +228,7 @@ export class DeskLampShowcaseRenderer {
         this.active = false;
         this.documentVisible = !document.hidden;
         this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.motionOverride = false;
         this.autoRotate = options.autoRotate !== false;
         this.mode = options.mode ?? 'showcase';
         this.frame = null;
@@ -234,6 +240,7 @@ export class DeskLampShowcaseRenderer {
         this.zoom = 1;
         this.firstFrameDrawn = false;
         this.destroyed = false;
+        this.contextLost = false;
         this.state = {
             ...manifest.defaultPose,
             finish: 'black',
@@ -253,10 +260,25 @@ export class DeskLampShowcaseRenderer {
 
         this.onContextLost = (event) => {
             event.preventDefault();
+            this.contextLost = true;
             this.pause();
-            this.callbacks.onError?.(new Error('The WebGL context was lost.'));
+            this.callbacks.onContextLost?.();
+        };
+        this.onContextRestored = () => {
+            if (this.destroyed) return;
+            try {
+                this.prepareGraphics();
+                this.updateTransforms();
+                this.contextLost = false;
+                this.lastFrameTime = null;
+                this.callbacks.onContextRestored?.();
+                this.requestDraw();
+            } catch (error) {
+                this.callbacks.onError?.(error);
+            }
         };
         canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+        canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
         this.prepareParts();
         this.prepareGraphics();
         this.updateTransforms();
@@ -437,7 +459,7 @@ export class DeskLampShowcaseRenderer {
 
     isVisible(part) {
         if (part.name === 'Cable.base_to_controller') return false;
-        if (part.category === 'cable' && !this.state.wires) return false;
+        if (EXTERNAL_ASSEMBLY_GROUPS.has(part.category) && !this.state.wires) return false;
         if (this.state.isolate && this.state.selection !== 'all' && part.category !== this.state.selection) return false;
         if (part.category === 'cable' && this.state.wires) return this.state.explode === 0;
 
@@ -536,7 +558,10 @@ export class DeskLampShowcaseRenderer {
     }
 
     draw(time = performance.now()) {
-        if (this.destroyed) return;
+        if (this.destroyed || this.contextLost) {
+            this.frame = null;
+            return;
+        }
         const gl = this.gl;
         const deviceScale = Math.min(window.devicePixelRatio || 1, 1.7);
         const width = Math.max(1, Math.round(this.canvas.clientWidth * deviceScale));
@@ -607,7 +632,7 @@ export class DeskLampShowcaseRenderer {
     }
 
     requestDraw() {
-        if (this.destroyed || this.frame !== null) return;
+        if (this.destroyed || this.contextLost || this.frame !== null) return;
         this.frame = requestAnimationFrame((time) => this.draw(time));
     }
 
@@ -636,12 +661,14 @@ export class DeskLampShowcaseRenderer {
 
     stopAutoRotation() {
         this.autoRotate = false;
+        this.motionOverride = false;
         this.setActive(this.active);
         this.requestDraw();
     }
 
-    setAutoRotation(enabled) {
+    setAutoRotation(enabled, { overrideReducedMotion = false } = {}) {
         this.autoRotate = Boolean(enabled);
+        this.motionOverride = this.autoRotate && Boolean(overrideReducedMotion);
         this.setActive(this.active);
         this.requestDraw();
     }
@@ -671,16 +698,16 @@ export class DeskLampShowcaseRenderer {
         this.requestDraw();
     }
 
-    setLight(mode, level = 5) {
+    setLight(mode, level = 10) {
         this.stopAutoRotation();
         this.state.mode = ['warm', 'neutral', 'cool', 'off'].includes(mode) ? mode : 'cool';
-        this.state.brightness = brightnessForLevel(level);
+        this.state.brightness = powerModeLevel(level);
         this.requestDraw();
     }
 
-    setSimulationBrightness(level) {
+    setPowerMode(level) {
         this.stopAutoRotation();
-        this.state.brightness = clamp(Math.round(Number(level)), [1, 10]);
+        this.state.brightness = powerModeLevel(level);
         this.requestDraw();
     }
 
@@ -710,13 +737,17 @@ export class DeskLampShowcaseRenderer {
     setWires(enabled) {
         this.stopAutoRotation();
         this.state.wires = Boolean(enabled);
+        if (!this.state.wires && EXTERNAL_ASSEMBLY_GROUPS.has(this.state.selection)) {
+            this.state.selection = 'all';
+            this.state.isolate = false;
+        }
         this.requestDraw();
     }
 
     setSelection(category) {
         this.stopAutoRotation();
         this.state.selection = category === 'all' || DESK_LAMP_GROUPS[category] ? category : 'all';
-        if (this.state.selection === 'cable') this.state.wires = true;
+        if (EXTERNAL_ASSEMBLY_GROUPS.has(this.state.selection)) this.state.wires = true;
         this.publishLabels();
         this.requestDraw();
     }
@@ -837,6 +868,7 @@ export class DeskLampShowcaseRenderer {
             cameraElevation: this.cameraElevation,
             zoom: this.zoom,
             autoRotate: this.autoRotate,
+            motionOverride: this.motionOverride,
             state: { ...this.state },
         };
     }
@@ -855,6 +887,7 @@ export class DeskLampShowcaseRenderer {
 
     setReducedMotion(reducedMotion) {
         this.reducedMotion = reducedMotion;
+        this.motionOverride = false;
         this.setActive(this.active);
         this.requestDraw();
     }
@@ -870,9 +903,12 @@ export class DeskLampShowcaseRenderer {
         this.pause();
         this.resizeObserver?.disconnect();
         this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
-        this.gl.deleteBuffer(this.buffer);
-        this.gl.deleteBuffer(this.wireBuffer);
-        this.gl.deleteProgram(this.program);
-        this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+        this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+        if (!this.contextLost) {
+            this.gl.deleteBuffer(this.buffer);
+            this.gl.deleteBuffer(this.wireBuffer);
+            this.gl.deleteProgram(this.program);
+            this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+        }
     }
 }

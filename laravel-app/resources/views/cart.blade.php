@@ -25,21 +25,24 @@
                     <article class="glass-panel flex flex-wrap items-center justify-between gap-4 p-5">
                         @if($item['available'])
                             <div class="flex items-center gap-4">
-                                <div class="grid h-14 w-14 place-items-center border border-cyber-border bg-[#0b1018] text-tech-400"><i data-lucide="lamp-desk" class="h-7 w-7"></i></div>
+                                <div class="grid h-14 w-14 place-items-center overflow-hidden border border-cyber-border bg-[#0b1018]"><img src="{{ $item['product']->primaryImageUrl() }}" alt="" class="h-full w-full object-contain"></div>
                                 <div>
                                     <h2 class="font-semibold text-white">{{ $item['product']->name }}</h2>
-                                    <p class="mt-1 font-mono text-xs text-tech-400">BDT {{ number_format($item['product']->price) }} / UNIT</p>
+                                    @if($item['variant_label'])<p class="mt-1 text-xs text-slate-400">Color: <span class="font-semibold text-white">{{ $item['variant_label'] }}</span></p>@endif
+                                    <p class="mt-1 font-mono text-xs text-tech-400">৳{{ number_format($item['product']->final_price, 0) }} / UNIT</p>
                                     <p class="mt-1 text-xs text-slate-500">LINE_TOTAL: BDT {{ number_format($item['line_total']) }}</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
                                 <form method="POST" action="{{ route('cart.update', $item['product_id']) }}" class="flex items-center gap-2">
                                     @csrf
+                                    @if($item['variant_key'])<input type="hidden" name="variant_key" value="{{ $item['variant_key'] }}">@endif
                                     <input aria-label="Quantity for {{ $item['product']->name }}" type="number" name="quantity" min="0" value="{{ $item['quantity'] }}" class="min-h-11 w-16 border border-cyber-border bg-[#090d14] px-2 py-2 text-center text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-tech-300">
                                     <button class="min-h-11 border border-cyber-border px-3 py-2 font-mono text-xs text-slate-300 outline-none hover:border-tech-600 hover:text-tech-300 focus-visible:ring-2 focus-visible:ring-tech-300">Update</button>
                                 </form>
                                 <form method="POST" action="{{ route('cart.remove', $item['product_id']) }}">
                                     @csrf
+                                    @if($item['variant_key'])<input type="hidden" name="variant_key" value="{{ $item['variant_key'] }}">@endif
                                     <button aria-label="Remove {{ $item['product']->name }} from cart" class="grid h-11 w-11 place-items-center border border-rose-900/70 text-rose-300 outline-none hover:bg-rose-950/70 focus-visible:ring-2 focus-visible:ring-rose-300"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
                                 </form>
                             </div>
@@ -61,7 +64,7 @@
                 <h2 class="font-mono text-sm text-tech-300">ORDER_SUMMARY</h2>
                 <dl class="mt-5 space-y-3 border-y border-cyber-border py-4 text-sm">
                     <div class="flex justify-between"><dt class="text-slate-500">AVAILABLE_SUBTOTAL</dt><dd>BDT {{ number_format($subtotal) }}</dd></div>
-                    <div class="flex justify-between gap-4"><dt class="text-slate-500">Shipping</dt><dd class="text-right">Calculated at checkout</dd></div>
+                    <div class="flex justify-between gap-4"><dt class="text-slate-500">Delivery</dt><dd class="text-right font-semibold text-emerald-300">FREE throughout Bangladesh</dd></div>
                 </dl>
                 <div class="mt-4 flex justify-between font-mono text-lg"><span>Subtotal</span><strong class="text-tech-300">BDT {{ number_format($subtotal) }}</strong></div>
                 <a href="{{ route('checkout') }}" class="mt-6 flex items-center justify-center gap-2 border border-tech-400 bg-tech-600 px-4 py-3 text-sm font-mono text-white hover:bg-tech-500">CHECKOUT<i data-lucide="arrow-right" class="h-4 w-4"></i></a>

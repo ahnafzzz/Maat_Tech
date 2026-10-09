@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Customer Login | MAAT Technologies BD</title>
-    @vite('resources/css/app.css')
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <title>Customer Login | {{ $storefrontSettings->site_name }}</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-[#090b10] font-sans text-white">
     <div class="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(38,49,65,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(38,49,65,.35)_1px,transparent_1px)] [background-size:42px_42px]"></div>
@@ -15,9 +14,9 @@
             @csrf
 
             <a href="{{ route('home') }}" class="flex items-center gap-3">
-                <span class="grid h-9 w-9 place-items-center border border-tech-400 bg-tech-600"><i data-lucide="cpu" class="h-5 w-5"></i></span>
+                <img src="{{ $storefrontSettings->logoUrl() }}" alt="{{ $storefrontSettings->logo_alt }}" class="h-14 w-16 shrink-0 object-contain [filter:drop-shadow(0_0_7px_rgba(45,212,191,.28))]">
                 <span>
-                    <strong class="block font-mono text-lg">MAAT Technologies BD</strong>
+                    <strong class="block font-mono text-lg">{{ $storefrontSettings->site_name }}</strong>
                     <small class="font-mono text-[9px] tracking-[.18em] text-tech-400">CUSTOMER_PORTAL</small>
                 </span>
             </a>
@@ -48,7 +47,7 @@
 
             <div class="mt-3 flex items-center justify-between">
                 <label class="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" name="remember" class="accent-teal-500">Remember this device</label>
-                <button id="toggle-password" type="button" class="text-xs text-tech-300 hover:text-tech-200">Show password</button>
+                <button type="button" data-password-toggle="customer-password" class="text-xs text-tech-300 hover:text-tech-200">Show password</button>
             </div>
 
             <div class="mt-3 text-right">
@@ -64,21 +63,5 @@
         </form>
     </main>
 
-    <script>
-        lucide.createIcons();
-
-        (function () {
-            var btn = document.getElementById('toggle-password');
-            var field = document.getElementById('customer-password');
-            if (!btn || !field) {
-                return;
-            }
-            btn.addEventListener('click', function () {
-                var visible = field.type === 'password';
-                field.type = visible ? 'text' : 'password';
-                btn.textContent = visible ? 'Hide password' : 'Show password';
-            });
-        })();
-    </script>
 </body>
 </html>
